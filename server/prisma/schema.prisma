@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Station {
+  id           String   @id @default(cuid())
+  codigoestacao   String   @unique
+  Estacao_Nome    String?
+  Estacao_Status  String?
+  Latitude        Float?
+  Longitude       Float?
+  UF              String?  @db.VarChar(2)
+  Corpo_Hidrico   String?
+  criadaEm     DateTime @default(now())
+  atualizadaEm DateTime @updatedAt
+}
+
+// Inventário HIDRO (completo) — manter nomes exatamente como na ANA
+model HidroStation {
+  // A própria ANA usa codigoestacao (string) – usamos como chave primária
+  codigoestacao                       String   @id
+  Altitude                            String?
+  Area_Drenagem                       String?
+  Bacia_Nome                          String?
+  Codigo_Adicional                    String?
+  Codigo_Operadora_Unidade_UF         String?
+  Data_Periodo_Climatologica_Fim      String?
+  Data_Periodo_Climatologica_Inicio   String?
+  Data_Periodo_Desc_Liquida_Fim       String?
+  Data_Periodo_Desc_liquida_Inicio    String?
+  Data_Periodo_Escala_Fim             String?
+  Data_Periodo_Escala_Inicio          String?
+  Data_Periodo_Piezometria_Fim        String?
+  Data_Periodo_Piezometria_Inicio     String?
+  Data_Periodo_Pluviometro_Fim        String?
+  Data_Periodo_Pluviometro_Inicio     String?
+  Data_Periodo_Qual_Agua_Fim          String?
+  Data_Periodo_Qual_Agua_Inicio       String?
+  Data_Periodo_Registrador_Chuva_Fim  String?
+  Data_Periodo_Registrador_Chuva_Inicio String?
+  Data_Periodo_Registrador_Nivel_Fim  String?
+  Data_Periodo_Registrador_Nivel_Inicio String?
+  Data_Periodo_Sedimento_Inicio       String?
+  Data_Periodo_Sedimento_fim          String?
+  Data_Periodo_Tanque_Evapo_Fim       String?
+  Data_Periodo_Tanque_Evapo_Inicio    String?
+  Data_Periodo_Telemetrica_Fim        String?
+  Data_Periodo_Telemetrica_Inicio     String?
+  Data_Ultima_Atualizacao             String?
+  Estacao_Nome                         String?
+  Latitude                             String?
+  Longitude                            String?
+  Municipio_Codigo                     String?
+  Municipio_Nome                       String?
+  Operadora_Codigo                     String?
+  Operadora_Sigla                      String?
+  Operadora_Sub_Unidade_UF             String?
+  Operando                              String?
+  Responsavel_Codigo                   String?
+  Responsavel_Sigla                    String?
+  Responsavel_Unidade_UF               String?
+  Rio_Codigo                           String?
+  Rio_Nome                             String?
+  Sub_Bacia_Codigo                     String?
+  Sub_Bacia_Nome                       String?
+  Tipo_Estacao                         String?
+  Tipo_Estacao_Climatologica           String?
+  Tipo_Estacao_Desc_Liquida            String?
+  Tipo_Estacao_Escala                  String?
+  Tipo_Estacao_Piezometria             String?
+  Tipo_Estacao_Pluviometro             String?
+  Tipo_Estacao_Qual_Agua               String?
+  Tipo_Estacao_Registrador_Chuva       String?
+  Tipo_Estacao_Registrador_Nivel       String?
+  Tipo_Estacao_Sedimentos              String?
+  Tipo_Estacao_Tanque_evapo            String?
+  Tipo_Estacao_Telemetrica             String?
+  Tipo_Rede_Basica                     String?
+  Tipo_Rede_Captacao                   String?
+  Tipo_Rede_Classe_Vazao               String?
+  Tipo_Rede_Curso_Dagua                String?
+  Tipo_Rede_Energetica                 String?
+  Tipo_Rede_Estrategica                String?
+  Tipo_Rede_Navegacao                  String?
+  Tipo_Rede_Qual_Agua                  String?
+  Tipo_Rede_Sedimentos                 String?
+  UF_Estacao                           String?
+  UF_Nome_Estacao                      String?
+  codigobacia                          String?
+  criadaEm                             DateTime @default(now())
+  atualizadaEm                         DateTime @updatedAt
+}

@@ -1,0 +1,62 @@
+### Health
+GET http://localhost:3000/health
+
+### Login com credenciais do body
+POST http://localhost:3000/api/ana/login
+Content-Type: application/json
+
+{
+  "identificador": "<seu-identificador>",
+  "senha": "<sua-senha>"
+}
+
+### Login usando .env (body vazio)
+POST http://localhost:3000/api/ana/login
+Content-Type: application/json
+
+{}
+
+### Sincronizar inventário HidroSat (usa .env se body vazio)
+POST http://localhost:3000/api/ana/estacoes/hidrosat/sync
+Content-Type: application/json
+
+{}
+
+### Listar estações (padrão: pagina=1, tamanho=50)
+GET http://localhost:3000/api/ana/estacoes
+
+### Listar estações filtrando por UF
+GET http://localhost:3000/api/ana/estacoes?uf=SP&tamanho=20
+
+### Listar estações com busca textual (nome/codigo/rio)
+GET http://localhost:3000/api/ana/estacoes?q=piracicaba
+
+POST http://localhost:3000/api/ana/estacoes/hidro/sync
+Content-Type: application/json
+
+{
+  "unidadefederativa": "GO"
+}
+
+GET http://localhost:3000/api/ana/estacoes/hidro?unidadefederativa=GO&tamanho=3
+
+### Listar bacias de GO (agregado)
+GET http://localhost:3000/api/ana/bacias
+
+### Listar bacias de GO incluindo sub-bacias
+GET http://localhost:3000/api/ana/bacias?includeSub=true
+
+### Filtrar HIDRO por código de bacia
+GET http://localhost:3000/api/ana/estacoes/hidro?unidadefederativa=GO&codigobacia=0101
+
+### Filtrar HIDRO por nome da bacia (contém)
+GET http://localhost:3000/api/ana/estacoes/hidro?unidadefederativa=GO&bacia=Araguaia
+
+### Filtrar HIDRO por sub-bacia (contém)
+GET http://localhost:3000/api/ana/estacoes/hidro?unidadefederativa=GO&subbacia=Tocantins
+
+### Bacias ao vivo (consulta direta na ANA com UF=GO)
+GET http://localhost:3000/api/ana/bacias/live
+
+### Bacias ao vivo com sub-bacias e filtro textual
+GET http://localhost:3000/api/ana/bacias/live?includeSub=true&q=Araguaia

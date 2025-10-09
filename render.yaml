@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ana-hidro-backend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: cd server && npm install && npx prisma generate && npm run build
+    startCommand: cd server && npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ana-hidro-db
+          property: connectionString
+      - key: ANA_BASE_URL
+        value: https://api.ana.gov.br/hidrowebservice
+      - key: ANA_IDENTIFICADOR
+        sync: false
+      - key: ANA_SENHA
+        sync: false
+
+databases:
+  - name: ana-hidro-db
+    databaseName: ana_hidro
+    plan: free
