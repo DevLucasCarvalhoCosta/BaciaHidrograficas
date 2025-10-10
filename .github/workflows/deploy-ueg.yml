@@ -79,6 +79,7 @@ jobs:
             server/dist/
             server/package*.json
             server/prisma/
+            server/ecosystem.config.js
             server/node_modules/.prisma/
           retention-days: 1
 
@@ -206,31 +207,6 @@ jobs:
             # Instalar dependências de produção
             echo "📦 Instalando dependências..."
             npm ci --production
-            
-            # Criar ecosystem config para PM2
-            cat > ecosystem.config.js << 'EOFPM2'
-            module.exports = {
-              apps: [{
-                name: 'ana-backend',
-                script: './dist/index.js',
-                cwd: '/home/usuario/ana-backend',
-                instances: 1,
-                exec_mode: 'cluster',
-                env: {
-                  NODE_ENV: 'production',
-                  PORT: 3001
-                },
-                error_file: '/home/usuario/logs/ana-backend-error.log',
-                out_file: '/home/usuario/logs/ana-backend-out.log',
-                log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-                merge_logs: true,
-                autorestart: true,
-                max_restarts: 10,
-                min_uptime: '10s',
-                restart_delay: 4000
-              }]
-            };
-            EOFPM2
             
             # Aplicar migrations do Prisma
             echo "🗄️ Aplicando migrations do banco..."
