@@ -1,0 +1,400 @@
+name: Deploy to UEG Server
+
+on:
+  push:
+    branches:
+      - main
+      - production
+  workflow_dispatch:
+
+jobs:
+  # ==========================================
+  # VERIFICAÇÃO PRÉVIA
+  # ==========================================
+  pre-check:
+    runs-on: ubuntu-latest
+    name: 🔍 Pre-deployment Checks
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ✅ Verify server connectivity
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          script: |
+            echo "🔍 Verificando servidor..."
+            echo "Sistema: $(uname -a)"
+            echo "Espaço em disco:"
+            df -h | grep -E "Filesystem|/$"
+            echo "Processos PM2:"
+            pm2 list || echo "PM2 não disponível"
+            echo "✅ Servidor acessível!"
+
+  # ==========================================
+  # BUILD
+  # ==========================================
+  build:
+    runs-on: ubuntu-latest
+    needs: pre-check
+    name: 🏗️ Build Application
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            server/package-lock.json
+            web/package-lock.json
+
+      # ==========================================
+      # BUILD BACKEND
+      # ==========================================
+      - name: 📦 Install Backend Dependencies
+        working-directory: ./server
+        run: npm ci
+
+      - name: 🏗️ Build Backend
+        working-directory: ./server
+        run: npm run build
+
+      - name: 🔍 Generate Prisma Client
+        working-directory: ./server
+        run: npx prisma generate
+
+      - name: 📤 Upload Backend Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-build
+          path: |
+            server/dist/
+            server/package*.json
+            server/prisma/
+            server/node_modules/.prisma/
+          retention-days: 1
+
+      # ==========================================
+      # BUILD FRONTEND
+      # ==========================================
+      - name: 📦 Install Frontend Dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: 🏗️ Build Frontend
+        working-directory: ./web
+        env:
+          VITE_API_URL: https://patrimonioueg.duckdns.org/api/ana
+        run: npm run build
+
+      - name: 📤 Upload Frontend Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: web/dist/
+          retention-days: 1
+
+  # ==========================================
+  # DEPLOY
+  # ==========================================
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    name: 🚀 Deploy to UEG Server
+    
+    steps:
+      - name: 📥 Download Backend Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-build
+          path: ./backend-deploy/
+
+      - name: 📥 Download Frontend Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: ./frontend-deploy/
+
+      # ==========================================
+      # PREPARE SERVER
+      # ==========================================
+      - name: 🛠️ Prepare Server Directories
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            
+            echo "🛠️ Preparando diretórios..."
+            
+            # Criar estrutura de diretórios
+            mkdir -p /home/usuario/ana-backend
+            mkdir -p /home/usuario/logs
+            mkdir -p /tmp/ana-deploy-backup
+            
+            # Backup do backend atual (se existir)
+            if [ -d "/home/usuario/ana-backend/dist" ]; then
+              echo "💾 Fazendo backup do backend atual..."
+              cp -r /home/usuario/ana-backend/dist /tmp/ana-deploy-backup/dist-$(date +%Y%m%d-%H%M%S)
+            fi
+            
+            # Parar processo PM2 (se existir)
+            echo "⏸️ Parando serviços..."
+            pm2 stop ana-backend 2>/dev/null || echo "Processo ana-backend não estava rodando"
+            
+            # Criar diretório frontend
+            sudo mkdir -p /var/www/ana-frontend
+            sudo chown -R usuario:usuario /var/www/ana-frontend
+            
+            # Backup do frontend atual (se existir)
+            if [ -d "/var/www/ana-frontend/dist" ]; then
+              echo "💾 Fazendo backup do frontend atual..."
+              sudo cp -r /var/www/ana-frontend/dist /tmp/ana-deploy-backup/frontend-$(date +%Y%m%d-%H%M%S)
+            fi
+            
+            echo "✅ Diretórios preparados!"
+
+      # ==========================================
+      # DEPLOY BACKEND
+      # ==========================================
+      - name: 📤 Transfer Backend Files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          source: "backend-deploy/*"
+          target: /home/usuario/ana-backend/
+          strip_components: 1
+          overwrite: true
+
+      - name: ⚙️ Configure Backend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            
+            cd /home/usuario/ana-backend
+            
+            echo "⚙️ Configurando backend..."
+            
+            # Criar .env de produção
+            cat > .env << EOF
+            PORT=3001
+            NODE_ENV=production
+            DATABASE_URL=${{ secrets.DATABASE_URL }}
+            ANA_BASE_URL=${{ secrets.ANA_BASE_URL }}
+            EOF
+            
+            # Instalar dependências de produção
+            echo "📦 Instalando dependências..."
+            npm ci --production
+            
+            # Criar ecosystem config para PM2
+            cat > ecosystem.config.js << 'EOFPM2'
+            module.exports = {
+              apps: [{
+                name: 'ana-backend',
+                script: './dist/index.js',
+                cwd: '/home/usuario/ana-backend',
+                instances: 1,
+                exec_mode: 'cluster',
+                env: {
+                  NODE_ENV: 'production',
+                  PORT: 3001
+                },
+                error_file: '/home/usuario/logs/ana-backend-error.log',
+                out_file: '/home/usuario/logs/ana-backend-out.log',
+                log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+                merge_logs: true,
+                autorestart: true,
+                max_restarts: 10,
+                min_uptime: '10s',
+                restart_delay: 4000
+              }]
+            };
+            EOFPM2
+            
+            # Aplicar migrations do Prisma
+            echo "🗄️ Aplicando migrations do banco..."
+            npx prisma db push --accept-data-loss --skip-generate
+            
+            echo "✅ Backend configurado!"
+
+      # ==========================================
+      # DEPLOY FRONTEND
+      # ==========================================
+      - name: 📤 Transfer Frontend Files
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          source: "frontend-deploy/*"
+          target: /var/www/ana-frontend/dist/
+          strip_components: 1
+          overwrite: true
+
+      - name: ⚙️ Configure Frontend
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          script: |
+            echo "⚙️ Ajustando permissões do frontend..."
+            sudo chown -R www-data:www-data /var/www/ana-frontend
+            sudo chmod -R 755 /var/www/ana-frontend
+            echo "✅ Frontend configurado!"
+
+      # ==========================================
+      # START SERVICES
+      # ==========================================
+      - name: 🚀 Start Services
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            
+            cd /home/usuario/ana-backend
+            
+            # Deletar processo antigo do PM2 (se existir)
+            pm2 delete ana-backend 2>/dev/null || true
+            
+            # Iniciar backend com PM2
+            echo "🚀 Iniciando backend..."
+            pm2 start ecosystem.config.js
+            pm2 save --force
+            
+            # Aguardar inicialização
+            echo "⏳ Aguardando inicialização do backend..."
+            sleep 5
+            
+            # Verificar status
+            echo "📊 Status dos processos:"
+            pm2 list
+            
+            # Verificar logs
+            echo "📋 Últimas linhas do log:"
+            pm2 logs ana-backend --lines 10 --nostream
+            
+            # Verificar se backend está respondendo
+            echo "🏥 Testando backend..."
+            curl -f http://localhost:3001/health || echo "⚠️ Backend não está respondendo ainda"
+            
+            # Testar configuração do Nginx
+            echo "🔧 Testando Nginx..."
+            sudo nginx -t
+            
+            # Recarregar Nginx (sem downtime)
+            echo "♻️ Recarregando Nginx..."
+            sudo systemctl reload nginx
+            
+            echo "✅ Serviços iniciados!"
+
+      # ==========================================
+      # POST-DEPLOY VERIFICATION
+      # ==========================================
+      - name: ✅ Verify Deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.UEG_SSH_HOST }}
+          port: ${{ secrets.UEG_SSH_PORT }}
+          username: ${{ secrets.UEG_SSH_USER }}
+          key: ${{ secrets.UEG_SSH_KEY }}
+          script: |
+            echo "🔍 Verificando deployment..."
+            echo ""
+            echo "📊 Status PM2:"
+            pm2 list
+            echo ""
+            echo "🗂️ Arquivos Frontend:"
+            ls -lh /var/www/ana-frontend/dist/ | head -10
+            echo ""
+            echo "🗂️ Arquivos Backend:"
+            ls -lh /home/usuario/ana-backend/dist/ | head -10
+            echo ""
+            echo "📋 Últimas linhas do log do backend:"
+            pm2 logs ana-backend --lines 20 --nostream
+            echo ""
+            echo "✅ Verificação concluída!"
+
+  # ==========================================
+  # HEALTH CHECK
+  # ==========================================
+  health-check:
+    runs-on: ubuntu-latest
+    needs: deploy
+    name: 🏥 Health Check
+    
+    steps:
+      - name: ⏳ Wait for application to start
+        run: sleep 10
+
+      - name: 🏥 Check Backend Health
+        run: |
+          echo "🔍 Verificando saúde do backend..."
+          response=$(curl -f -s https://patrimonioueg.duckdns.org/api/ana/health)
+          echo "Resposta: $response"
+          
+          if echo "$response" | grep -q "ok"; then
+            echo "✅ Backend está saudável!"
+          else
+            echo "❌ Backend não está respondendo corretamente!"
+            exit 1
+          fi
+
+      - name: 🌐 Check Frontend Availability
+        run: |
+          echo "🔍 Verificando disponibilidade do frontend..."
+          status_code=$(curl -o /dev/null -s -w "%{http_code}" https://patrimonioueg.duckdns.org/ana)
+          
+          if [ "$status_code" -eq 200 ]; then
+            echo "✅ Frontend está acessível! (HTTP $status_code)"
+          else
+            echo "❌ Frontend retornou status: $status_code"
+            exit 1
+          fi
+
+      - name: 🎉 Deployment Success
+        run: |
+          echo "════════════════════════════════════════════"
+          echo "✅ DEPLOY CONCLUÍDO COM SUCESSO!"
+          echo "════════════════════════════════════════════"
+          echo ""
+          echo "🌐 URLs da aplicação:"
+          echo "   Frontend: https://patrimonioueg.duckdns.org/ana"
+          echo "   Backend:  https://patrimonioueg.duckdns.org/api/ana"
+          echo "   Health:   https://patrimonioueg.duckdns.org/api/ana/health"
+          echo ""
+          echo "📊 Para monitorar:"
+          echo "   ssh -p 8740 usuario@200.137.241.42"
+          echo "   pm2 logs ana-backend"
+          echo "   pm2 monit"
+          echo ""
+          echo "════════════════════════════════════════════"

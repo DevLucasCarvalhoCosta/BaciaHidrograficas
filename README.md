@@ -116,12 +116,63 @@ Acesse: http://localhost:5173
 
 ## 🌐 Deploy para Produção
 
-### Opção 1: Servidor Tradicional (UEG)
-Siga o guia completo: [DEPLOY_UEG.md](DEPLOY_UEG.md)
+### 🎯 Deploy no Servidor UEG (Recomendado)
 
-**Resumo rápido**: [DEPLOY_RAPIDO.md](DEPLOY_RAPIDO.md)
+Este projeto está configurado para deploy no servidor da UEG através de **GitHub Actions CI/CD**.
 
-### Opção 2: Railway/Render
+#### 📋 Guias Disponíveis
+
+1. **[GUIA_DEPLOY_COMPLETO.md](GUIA_DEPLOY_COMPLETO.md)** ⭐ **[COMEÇAR AQUI]**
+   - Guia passo a passo completo
+   - Verificações de segurança
+   - Troubleshooting detalhado
+
+2. **[VERIFICACAO_SERVIDOR_UEG.md](VERIFICACAO_SERVIDOR_UEG.md)**
+   - Comandos de verificação ANTES do deploy
+   - Scripts de diagnóstico
+   - Checklist de segurança
+
+3. **[CONFIGURACAO_UEG.md](CONFIGURACAO_UEG.md)**
+   - Detalhes técnicos da configuração
+   - Estrutura de diretórios
+   - Configurações Nginx e PM2
+
+#### 🚀 Deploy Rápido (para quem já configurou tudo)
+
+```bash
+# 1. Conectar ao servidor e verificar
+ssh -p 8740 usuario@200.137.241.42
+~/verificar_antes_deploy.sh
+
+# 2. Push para GitHub (dispara CI/CD automaticamente)
+git add .
+git commit -m "feat: nova funcionalidade"
+git push origin main
+
+# 3. Acompanhar deploy
+# Acesse: https://github.com/SEU_USUARIO/SEU_REPO/actions
+```
+
+#### 🌐 URLs de Produção
+
+- **Frontend**: https://patrimonioueg.duckdns.org/ana
+- **Backend API**: https://patrimonioueg.duckdns.org/api/ana
+- **Health Check**: https://patrimonioueg.duckdns.org/api/ana/health
+
+#### ⚙️ Configuração do CI/CD
+
+O deploy é automatizado via GitHub Actions (`.github/workflows/deploy-ueg.yml`):
+
+1. ✅ Verificação pré-deploy
+2. 🏗️ Build automático (backend + frontend)
+3. 📤 Deploy para servidor UEG
+4. 🏥 Health checks automáticos
+5. ♻️ Reinício automático com PM2
+
+**Sem conflitos**: O projeto usa porta 3001 e path `/ana`, não interferindo no PatrimônioUEG.
+
+### Opção Alternativa: Railway/Render
+
 ```bash
 # Ver configurações em:
 railway.json
