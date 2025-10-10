@@ -1,0 +1,87 @@
+version: '3.8'
+
+# ============================================
+# DEPLOY ISOLADO APENAS DO PROJETO ANA
+# Mantém outros projetos como estão
+# ============================================
+
+networks:
+  ana_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+
+volumes:
+  ana_db_data:
+
+services:
+  # ==========================================
+  # BANCO DE DADOS ANA
+  # ==========================================
+  ana-db:
+    image: postgres:16-alpine
+    container_name: ana-postgres
+    restart: unless-stopped
+    ports:
+      - "5433:5432"  # Porta diferente para não conflitar
+    environment:
+      POSTGRES_DB: ana_hidro
+      POSTGRES_USER: ${ANA_DB_USER:-ana_user}
+      POSTGRES_PASSWORD: ${ANA_DB_PASSWORD}
+    volumes:
+      - ana_db_data:/var/lib/postgresql/data
+    networks:
+      - ana_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # BACKEND ANA
+  # ==========================================
+  ana-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.production
+    container_name: ana-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${ANA_DB_USER:-ana_user}:${ANA_DB_PASSWORD}@ana-db:5432/ana_hidro
+      ANA_BASE_URL: https://dadosabertos.ana.gov.br
+      ANA_REQUEST_TIMEOUT: 60000
+    networks:
+      - ana_network
+    depends_on:
+      ana-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ==========================================
+  # FRONTEND ANA (Nginx simples)
+  # ==========================================
+  ana-frontend:
+    image: nginx:1.27-alpine
+    container_name: ana-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:80"
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+    networks:
+      - ana_network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

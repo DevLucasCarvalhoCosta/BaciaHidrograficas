@@ -1,6 +1,6 @@
 export const API_BASE_URL = (import.meta as any).env?.DEV
   ? ''
-  : ((import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:3000')
+  : ((import.meta as any).env?.VITE_API_BASE_URL || '')
 
 export const api = {
   async get(url: string, options?: { params?: Record<string, any> }) {
