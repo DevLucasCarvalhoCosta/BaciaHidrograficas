@@ -154,14 +154,13 @@ jobs:
             echo "⏸️ Parando serviços..."
             pm2 stop ana-backend 2>/dev/null || echo "Processo ana-backend não estava rodando"
             
-            # Criar diretório frontend
-            sudo mkdir -p /var/www/ana-frontend
-            sudo chown -R usuario:usuario /var/www/ana-frontend
+            # Criar diretório frontend (sem sudo - já pertence ao usuario)
+            mkdir -p /var/www/ana-frontend/dist
             
             # Backup do frontend atual (se existir)
-            if [ -d "/var/www/ana-frontend/dist" ]; then
+            if [ -d "/var/www/ana-frontend/dist" ] && [ "$(ls -A /var/www/ana-frontend/dist 2>/dev/null)" ]; then
               echo "💾 Fazendo backup do frontend atual..."
-              sudo cp -r /var/www/ana-frontend/dist /tmp/ana-deploy-backup/frontend-$(date +%Y%m%d-%H%M%S)
+              cp -r /var/www/ana-frontend/dist /tmp/ana-deploy-backup/frontend-$(date +%Y%m%d-%H%M%S)
             fi
             
             echo "✅ Diretórios preparados!"
@@ -263,8 +262,7 @@ jobs:
           key: ${{ secrets.UEG_SSH_KEY }}
           script: |
             echo "⚙️ Ajustando permissões do frontend..."
-            sudo chown -R www-data:www-data /var/www/ana-frontend
-            sudo chmod -R 755 /var/www/ana-frontend
+            chmod -R 755 /var/www/ana-frontend
             echo "✅ Frontend configurado!"
 
       # ==========================================
