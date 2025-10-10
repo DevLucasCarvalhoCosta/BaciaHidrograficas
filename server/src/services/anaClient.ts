@@ -50,9 +50,11 @@ export class AnaClient {
 
   async getHidrosatInventarioEstacoes(token: string): Promise<unknown[]> {
     if (!token) throw new Error('Token é obrigatório para consultar o inventário Hidrosat.');
+    // Sanitizar token: remover quebras de linha, espaços extras e caracteres inválidos
+    const cleanToken = token.replace(/[\r\n\t]/g, '').trim();
     const resp = await this.http.get('/EstacoesTelemetricas/HidrosatInventarioEstacoes/v1', {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${cleanToken}`,
         Accept: 'application/json, text/plain, */*',
       },
       validateStatus: (s) => s >= 200 && s < 500,
@@ -75,8 +77,10 @@ export class AnaClient {
     }
     try {
       console.log('[ANA HIDRO] GET /EstacoesTelemetricas/HidroInventarioEstacoes/v1 params =', search);
+      // Sanitizar token: remover quebras de linha, espaços extras e caracteres inválidos
+      const cleanToken = token.replace(/[\r\n\t]/g, '').trim();
       const resp = await this.http.get('/EstacoesTelemetricas/HidroInventarioEstacoes/v1', {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json, text/plain, */*' },
+        headers: { Authorization: `Bearer ${cleanToken}`, Accept: 'application/json, text/plain, */*' },
         params: search,
         validateStatus: (s) => s >= 200 && s < 500,
       });

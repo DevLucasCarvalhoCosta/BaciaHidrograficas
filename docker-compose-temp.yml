@@ -1,0 +1,192 @@
+version: '3.8'
+
+networks:
+  patrimonio_network:
+  estresse_network:
+  ana_network:
+  n8n_network:
+  proxy_network:
+
+volumes:
+  patrimonio_db_data:
+  patrimonio_uploads:
+  estresse_db_data:
+  ana_db_data:
+  n8n_data:
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/nginx/includes:/etc/nginx/includes:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/html:/var/www/html:ro
+    networks:
+      - proxy_network
+      - patrimonio_network
+      - estresse_network
+      - ana_network
+      - n8n_network
+    depends_on:
+      - patrimonio-backend
+      - ana-backend
+      - estresse-app
+
+  patrimonio-db:
+    image: postgres:16-alpine
+    container_name: patrimonio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: patrimonio
+      POSTGRES_USER: ${PATRIMONIO_DB_USER}
+      POSTGRES_PASSWORD: ${PATRIMONIO_DB_PASSWORD}
+    volumes:
+      - patrimonio_db_data:/var/lib/postgresql/data
+    networks:
+      - patrimonio_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  patrimonio-backend:
+    build:
+      context: ./patrimonio/backend
+      dockerfile: Dockerfile
+    container_name: patrimonio-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: patrimonio-db
+      DB_PORT: 5432
+      DB_USERNAME: ${PATRIMONIO_DB_USER}
+      DB_PASSWORD: ${PATRIMONIO_DB_PASSWORD}
+      DB_DATABASE: patrimonio
+      JWT_SECRET: ${PATRIMONIO_JWT_SECRET}
+      UPLOAD_DIR: ${PATRIMONIO_UPLOAD_DIR}
+      FRONTEND_URL: ${PATRIMONIO_FRONTEND_URL}
+    volumes:
+      - patrimonio_uploads:/app/uploads
+    networks:
+      - patrimonio_network
+      - proxy_network
+    depends_on:
+      patrimonio-db:
+        condition: service_healthy
+
+  patrimonio-frontend:
+    image: nginx:1.27-alpine
+    container_name: patrimonio-frontend
+    restart: unless-stopped
+    volumes:
+      - ./patrimonio/frontend/dist:/usr/share/nginx/html:ro
+    networks:
+      - patrimonio_network
+      - proxy_network
+
+  estresse-db:
+    image: postgres:16-alpine
+    container_name: estresse-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: estresse
+      POSTGRES_USER: ${ESTRESSE_DB_USER}
+      POSTGRES_PASSWORD: ${ESTRESSE_DB_PASSWORD}
+    volumes:
+      - estresse_db_data:/var/lib/postgresql/data
+    networks:
+      - estresse_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  estresse-app:
+    build:
+      context: ./estresse
+      dockerfile: Dockerfile
+    container_name: estresse-dash
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${ESTRESSE_DB_USER}:${ESTRESSE_DB_PASSWORD}@estresse-db:5432/estresse
+      DASH_PORT: 8050
+    networks:
+      - estresse_network
+      - proxy_network
+    depends_on:
+      estresse-db:
+        condition: service_healthy
+
+  ana-db:
+    image: postgres:16-alpine
+    container_name: ana-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ana_hidro
+      POSTGRES_USER: ${ANA_DB_USER}
+      POSTGRES_PASSWORD: ${ANA_DB_PASSWORD}
+    volumes:
+      - ana_db_data:/var/lib/postgresql/data
+    networks:
+      - ana_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ana-backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.production
+    container_name: ana-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${ANA_DB_USER}:${ANA_DB_PASSWORD}@ana-db:5432/ana_hidro
+      ANA_BASE_URL: ${ANA_BASE_URL}
+      ANA_IDENTIFICADOR: ${ANA_IDENTIFICADOR}
+      ANA_SENHA: ${ANA_SENHA}
+    networks:
+      - ana_network
+      - proxy_network
+    depends_on:
+      ana-db:
+        condition: service_healthy
+
+  ana-frontend:
+    image: nginx:1.27-alpine
+    container_name: ana-frontend
+    restart: unless-stopped
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+    networks:
+      - ana_network
+      - proxy_network
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-automation
+    restart: unless-stopped
+    environment:
+      - N8N_HOST=patrimonioueg.duckdns.org
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://patrimonioueg.duckdns.org/n8n/
+      - N8N_PATH=/n8n/
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - n8n_network
+      - proxy_network

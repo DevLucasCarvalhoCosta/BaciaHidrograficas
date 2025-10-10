@@ -31,11 +31,8 @@ jobs:
             echo "Sistema: $(uname -a)"
             echo "Espaço em disco:"
             df -h | grep -E "Filesystem|/$"
-            echo "🐳 Docker:"
-            docker --version
-            docker-compose --version
-            echo "📊 Containers em execução:"
-            cd ~/docker-ueg-projects && docker-compose ps | grep ana || echo "Nenhum container ANA rodando"
+            echo "Processos PM2:"
+            pm2 list || echo "PM2 não disponível"
             echo "✅ Servidor acessível!"
 
   # ==========================================
@@ -247,7 +244,7 @@ jobs:
       # ==========================================
       # START SERVICES
       # ==========================================
-      - name: 🚀 Start Services (Docker)
+      - name: 🚀 Start Services
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.UEG_SSH_HOST }}
@@ -258,52 +255,41 @@ jobs:
           script: |
             set -e
             
-            echo "🐳 Copiando arquivos para estrutura Docker..."
+            cd /home/usuario/ana-backend
             
-            # Copiar backend para estrutura Docker
-            cp -r /home/usuario/ana-backend/dist/* ~/docker-ueg-projects/server/dist/ 2>/dev/null || true
-            cp /home/usuario/ana-backend/package*.json ~/docker-ueg-projects/server/
-            cp -r /home/usuario/ana-backend/prisma ~/docker-ueg-projects/server/
+            # Deletar processo antigo do PM2 (se existir)
+            pm2 delete ana-backend 2>/dev/null || true
             
-            # Copiar frontend para estrutura Docker
-            cp -r /var/www/ana-frontend/dist/* ~/docker-ueg-projects/web/dist/
-            
-            # Navegar para diretório Docker
-            cd ~/docker-ueg-projects
-            
-            echo "� Reconstruindo e reiniciando containers..."
-            
-            # Rebuild backend (se houver mudanças)
-            docker-compose build ana-backend
-            
-            # Reiniciar containers
-            docker-compose up -d --force-recreate ana-backend ana-frontend
+            # Iniciar backend com PM2
+            echo "🚀 Iniciando backend..."
+            pm2 start ecosystem.config.js
+            pm2 save --force
             
             # Aguardar inicialização
-            echo "⏳ Aguardando inicialização dos containers..."
-            sleep 10
+            echo "⏳ Aguardando inicialização do backend..."
+            sleep 5
             
             # Verificar status
-            echo "📊 Status dos containers:"
-            docker-compose ps | grep ana
+            echo "📊 Status dos processos:"
+            pm2 list
             
-            # Verificar logs do backend
-            echo "📋 Últimas linhas do log do backend:"
-            docker-compose logs --tail=20 ana-backend
+            # Verificar logs
+            echo "📋 Últimas linhas do log:"
+            pm2 logs ana-backend --lines 10 --nostream
             
             # Verificar se backend está respondendo
             echo "🏥 Testando backend..."
-            docker exec ana-backend wget -qO- http://localhost:3001/health || echo "⚠️ Backend não está respondendo ainda"
+            curl -f http://localhost:3001/health || echo "⚠️ Backend não está respondendo ainda"
             
-            # Verificar arquivos do frontend
-            echo "� Verificando arquivos do frontend:"
-            docker exec ana-frontend ls -lh /usr/share/nginx/html/
+            # Testar configuração do Nginx
+            echo "🔧 Testando Nginx..."
+            sudo nginx -t
             
-            # Reiniciar nginx gateway
-            echo "♻️ Reiniciando Nginx gateway..."
-            docker-compose restart nginx
+            # Recarregar Nginx (sem downtime)
+            echo "♻️ Recarregando Nginx..."
+            sudo systemctl reload nginx
             
-            echo "✅ Containers Docker reiniciados com sucesso!"
+            echo "✅ Serviços iniciados!"
 
       # ==========================================
       # POST-DEPLOY VERIFICATION
@@ -317,22 +303,18 @@ jobs:
           key: ${{ secrets.UEG_SSH_KEY }}
           script: |
             echo "🔍 Verificando deployment..."
-            cd ~/docker-ueg-projects
             echo ""
-            echo "📊 Status dos containers:"
-            docker-compose ps | grep ana
+            echo "📊 Status PM2:"
+            pm2 list
             echo ""
-            echo "🗂️ Arquivos Frontend (dentro do container):"
-            docker exec ana-frontend ls -lh /usr/share/nginx/html/ | head -10
+            echo "🗂️ Arquivos Frontend:"
+            ls -lh /var/www/ana-frontend/dist/ | head -10
             echo ""
-            echo "🗂️ Arquivos Backend (dentro do container):"
-            docker exec ana-backend ls -lh /app/dist/ | head -10
+            echo "🗂️ Arquivos Backend:"
+            ls -lh /home/usuario/ana-backend/dist/ | head -10
             echo ""
             echo "📋 Últimas linhas do log do backend:"
-            docker-compose logs --tail=20 ana-backend
-            echo ""
-            echo "📋 Últimas linhas do log do frontend:"
-            docker-compose logs --tail=10 ana-frontend
+            pm2 logs ana-backend --lines 20 --nostream
             echo ""
             echo "✅ Verificação concluída!"
 
@@ -376,19 +358,17 @@ jobs:
       - name: 🎉 Deployment Success
         run: |
           echo "════════════════════════════════════════════"
-          echo "✅ DEPLOY DOCKER CONCLUÍDO COM SUCESSO!"
+          echo "✅ DEPLOY CONCLUÍDO COM SUCESSO!"
           echo "════════════════════════════════════════════"
           echo ""
           echo "🌐 URLs da aplicação:"
-          echo "   Frontend: https://patrimonioueg.duckdns.org/ana/"
-          echo "   Backend:  https://patrimonioueg.duckdns.org/api/ana/"
+          echo "   Frontend: https://patrimonioueg.duckdns.org/ana"
+          echo "   Backend:  https://patrimonioueg.duckdns.org/api/ana"
           echo "   Health:   https://patrimonioueg.duckdns.org/api/ana/health"
           echo ""
-          echo "📊 Para monitorar (Docker):"
+          echo "📊 Para monitorar:"
           echo "   ssh -p 8740 usuario@200.137.241.42"
-          echo "   cd ~/docker-ueg-projects"
-          echo "   docker-compose logs -f ana-backend"
-          echo "   docker-compose ps"
-          echo "   docker stats"
+          echo "   pm2 logs ana-backend"
+          echo "   pm2 monit"
           echo ""
           echo "════════════════════════════════════════════"
