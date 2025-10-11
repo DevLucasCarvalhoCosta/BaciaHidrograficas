@@ -31,8 +31,8 @@ jobs:
             echo "Sistema: $(uname -a)"
             echo "Espaço em disco:"
             df -h | grep -E "Filesystem|/$"
-            echo "Processos PM2:"
-            pm2 list || echo "PM2 não disponível"
+            echo "Containers Docker:"
+            cd ~/docker-ueg-projects && docker-compose ps | grep ana || echo "Containers ANA não encontrados"
             echo "✅ Servidor acessível!"
 
   # ==========================================
@@ -138,30 +138,20 @@ jobs:
           script: |
             set -e
             
-            echo "🛠️ Preparando diretórios..."
+            echo "🛠️ Preparando diretórios Docker..."
             
-            # Criar estrutura de diretórios
-            mkdir -p /home/usuario/ana-backend
-            mkdir -p /home/usuario/logs
+            # Criar backup
             mkdir -p /tmp/ana-deploy-backup
             
-            # Backup do backend atual (se existir)
-            if [ -d "/home/usuario/ana-backend/dist" ]; then
-              echo "💾 Fazendo backup do backend atual..."
-              cp -r /home/usuario/ana-backend/dist /tmp/ana-deploy-backup/dist-$(date +%Y%m%d-%H%M%S)
+            # Backup dos arquivos atuais
+            if [ -d "~/docker-ueg-projects/server/dist" ]; then
+              echo "💾 Fazendo backup do backend..."
+              cp -r ~/docker-ueg-projects/server/dist /tmp/ana-deploy-backup/backend-$(date +%Y%m%d-%H%M%S)
             fi
             
-            # Parar processo PM2 (se existir)
-            echo "⏸️ Parando serviços..."
-            pm2 stop ana-backend 2>/dev/null || echo "Processo ana-backend não estava rodando"
-            
-            # Criar diretório frontend (sem sudo - já pertence ao usuario)
-            mkdir -p /var/www/ana-frontend/dist
-            
-            # Backup do frontend atual (se existir)
-            if [ -d "/var/www/ana-frontend/dist" ] && [ "$(ls -A /var/www/ana-frontend/dist 2>/dev/null)" ]; then
-              echo "💾 Fazendo backup do frontend atual..."
-              cp -r /var/www/ana-frontend/dist /tmp/ana-deploy-backup/frontend-$(date +%Y%m%d-%H%M%S)
+            if [ -d "~/docker-ueg-projects/web/dist" ]; then
+              echo "💾 Fazendo backup do frontend..."
+              cp -r ~/docker-ueg-projects/web/dist /tmp/ana-deploy-backup/frontend-$(date +%Y%m%d-%H%M%S)
             fi
             
             echo "✅ Diretórios preparados!"
@@ -176,9 +166,9 @@ jobs:
           port: ${{ secrets.UEG_SSH_PORT }}
           username: ${{ secrets.UEG_SSH_USER }}
           key: ${{ secrets.UEG_SSH_KEY }}
-          source: "backend-deploy/*"
-          target: /home/usuario/ana-backend/
-          strip_components: 1
+          source: "backend-deploy/dist/*"
+          target: ~/docker-ueg-projects/server/
+          strip_components: 2
           overwrite: true
 
       - name: ⚙️ Configure Backend
@@ -192,25 +182,24 @@ jobs:
           script: |
             set -e
             
-            cd /home/usuario/ana-backend
+            cd ~/docker-ueg-projects
             
             echo "⚙️ Configurando backend..."
             
-            # Criar .env de produção
-            cat > .env << EOF
-            PORT=3001
-            NODE_ENV=production
-            DATABASE_URL=${{ secrets.DATABASE_URL }}
-            ANA_BASE_URL=${{ secrets.ANA_BASE_URL }}
+            # Verificar se o .env existe (não sobrescrever credenciais)
+            if [ ! -f .env ]; then
+              echo "⚠️ Arquivo .env não encontrado! Criando template..."
+              cat > .env << EOF
+            # Configurações do Banco de Dados
+            ANA_DB_USER=ana_user
+            ANA_DB_PASSWORD=change_me
+            
+            # Credenciais API ANA
+            ANA_BASE_URL=https://www.ana.gov.br/hidrowebservice
+            ANA_IDENTIFICADOR=change_me
+            ANA_SENHA=change_me
             EOF
-            
-            # Instalar dependências de produção
-            echo "📦 Instalando dependências..."
-            npm ci --production
-            
-            # Aplicar migrations do Prisma
-            echo "🗄️ Aplicando migrations do banco..."
-            npx prisma db push --accept-data-loss --skip-generate
+            fi
             
             echo "✅ Backend configurado!"
 
@@ -225,7 +214,7 @@ jobs:
           username: ${{ secrets.UEG_SSH_USER }}
           key: ${{ secrets.UEG_SSH_KEY }}
           source: "frontend-deploy/*"
-          target: /var/www/ana-frontend/dist/
+          target: ~/docker-ueg-projects/web/dist/
           strip_components: 1
           overwrite: true
 
@@ -238,7 +227,7 @@ jobs:
           key: ${{ secrets.UEG_SSH_KEY }}
           script: |
             echo "⚙️ Ajustando permissões do frontend..."
-            chmod -R 755 /var/www/ana-frontend
+            chmod -R 755 ~/docker-ueg-projects/web/dist
             echo "✅ Frontend configurado!"
 
       # ==========================================
@@ -255,41 +244,35 @@ jobs:
           script: |
             set -e
             
-            cd /home/usuario/ana-backend
+            cd ~/docker-ueg-projects
             
-            # Deletar processo antigo do PM2 (se existir)
-            pm2 delete ana-backend 2>/dev/null || true
+            echo "🚀 Reiniciando containers Docker..."
             
-            # Iniciar backend com PM2
-            echo "🚀 Iniciando backend..."
-            pm2 start ecosystem.config.js
-            pm2 save --force
+            # Restart apenas os containers da ANA
+            docker-compose restart ana-backend
+            docker-compose restart ana-frontend
             
             # Aguardar inicialização
-            echo "⏳ Aguardando inicialização do backend..."
+            echo "⏳ Aguardando inicialização..."
             sleep 5
             
-            # Verificar status
-            echo "📊 Status dos processos:"
-            pm2 list
+            # Verificar status dos containers
+            echo "📊 Status dos containers:"
+            docker-compose ps | grep ana
             
-            # Verificar logs
-            echo "📋 Últimas linhas do log:"
-            pm2 logs ana-backend --lines 10 --nostream
+            # Verificar logs do backend
+            echo "📋 Últimas linhas do log do backend:"
+            docker-compose logs --tail=20 ana-backend
             
             # Verificar se backend está respondendo
             echo "🏥 Testando backend..."
-            curl -f http://localhost:3001/health || echo "⚠️ Backend não está respondendo ainda"
+            docker-compose exec -T ana-backend wget -q -O- http://localhost:3001/health || echo "⚠️ Backend não está respondendo ainda"
             
-            # Testar configuração do Nginx
-            echo "🔧 Testando Nginx..."
-            sudo nginx -t
-            
-            # Recarregar Nginx (sem downtime)
+            # Recarregar Nginx gateway (sem downtime)
             echo "♻️ Recarregando Nginx..."
-            sudo systemctl reload nginx
+            docker-compose exec -T nginx nginx -s reload
             
-            echo "✅ Serviços iniciados!"
+            echo "✅ Serviços reiniciados!"
 
       # ==========================================
       # POST-DEPLOY VERIFICATION
@@ -304,17 +287,17 @@ jobs:
           script: |
             echo "🔍 Verificando deployment..."
             echo ""
-            echo "📊 Status PM2:"
-            pm2 list
+            echo "📊 Status dos Containers:"
+            cd ~/docker-ueg-projects && docker-compose ps | grep ana
             echo ""
             echo "🗂️ Arquivos Frontend:"
-            ls -lh /var/www/ana-frontend/dist/ | head -10
+            ls -lh ~/docker-ueg-projects/web/dist/ | head -10
             echo ""
             echo "🗂️ Arquivos Backend:"
-            ls -lh /home/usuario/ana-backend/dist/ | head -10
+            ls -lh ~/docker-ueg-projects/server/dist/ | head -10
             echo ""
             echo "📋 Últimas linhas do log do backend:"
-            pm2 logs ana-backend --lines 20 --nostream
+            cd ~/docker-ueg-projects && docker-compose logs --tail=20 ana-backend
             echo ""
             echo "✅ Verificação concluída!"
 
@@ -362,13 +345,14 @@ jobs:
           echo "════════════════════════════════════════════"
           echo ""
           echo "🌐 URLs da aplicação:"
-          echo "   Frontend: https://patrimonioueg.duckdns.org/ana"
-          echo "   Backend:  https://patrimonioueg.duckdns.org/api/ana"
+          echo "   Frontend: https://patrimonioueg.duckdns.org/ana/"
+          echo "   API:      https://patrimonioueg.duckdns.org/api/ana/"
           echo "   Health:   https://patrimonioueg.duckdns.org/api/ana/health"
           echo ""
           echo "📊 Para monitorar:"
           echo "   ssh -p 8740 usuario@200.137.241.42"
-          echo "   pm2 logs ana-backend"
-          echo "   pm2 monit"
+          echo "   cd ~/docker-ueg-projects"
+          echo "   docker-compose logs -f ana-backend"
+          echo "   docker-compose ps"
           echo ""
           echo "════════════════════════════════════════════"
