@@ -384,7 +384,8 @@ button:disabled {
 
 /* Custom Marker Icons */
 .custom-marker-icon,
-.simple-marker-icon {
+.pin-marker-icon,
+.cluster-marker-icon {
   background: transparent !important;
   border: none !important;
 }
@@ -395,6 +396,10 @@ button:disabled {
   border-color: var(--color-border) !important;
   color: var(--color-text-primary) !important;
   transition: all var(--transition-fast);
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  border-radius: var(--radius-sm) !important;
 }
 
 .leaflet-control-zoom a:hover {
@@ -403,10 +408,72 @@ button:disabled {
   color: var(--color-primary) !important;
 }
 
+/* Layers Control Styling */
+.leaflet-control-layers {
+  background: var(--color-surface) !important;
+  border: 1.5px solid var(--color-border) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+
+.leaflet-control-layers-toggle {
+  background-image: none !important;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--color-surface) !important;
+  position: relative;
+}
+
+.leaflet-control-layers-toggle::before {
+  content: '🗺️';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 20px;
+}
+
+.leaflet-control-layers-expanded {
+  padding: var(--spacing-md) !important;
+  min-width: 240px;
+}
+
+.leaflet-control-layers-base label,
+.leaflet-control-layers-overlays label {
+  display: flex !important;
+  align-items: center;
+  padding: var(--spacing-sm) !important;
+  margin: var(--spacing-xs) 0 !important;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+.leaflet-control-layers-base label:hover,
+.leaflet-control-layers-overlays label:hover {
+  background: var(--color-surface-hover);
+}
+
+.leaflet-control-layers-base input,
+.leaflet-control-layers-overlays input {
+  margin-right: var(--spacing-sm) !important;
+}
+
+.leaflet-control-layers-separator {
+  border-top: 1.5px solid var(--color-border) !important;
+  margin: var(--spacing-sm) 0 !important;
+}
+
 .leaflet-control-attribution {
   font-size: 0.75rem;
   background: rgba(255, 255, 255, 0.9) !important;
   backdrop-filter: blur(8px);
+  border-radius: var(--radius-sm) !important;
+  padding: 4px 8px !important;
+  border: 1px solid var(--color-border) !important;
 }
 
 /* Status & Alerts */

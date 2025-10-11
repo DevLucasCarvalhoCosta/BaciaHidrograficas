@@ -5,6 +5,8 @@ import { api } from '../services/api'
 import { FilterPanel, FilterRule, FieldType } from './FilterPanel'
 import { fixLeafletIcons } from '../services/leafletIcons'
 import { createStationMarkerIcon } from '../services/customMarkerIcon'
+import { MapLayerControl } from './MapLayerControl'
+import { StationDashboard } from './StationDashboard'
 
 // Ensure Leaflet default icons load correctly under Vite
 fixLeafletIcons()
@@ -18,7 +20,7 @@ export interface HidroStation {
   UF_Estacao?: string | null
   Rio_Nome?: string | null
   Tipo_Estacao?: string | null
-  Operando?: string | null
+  Operando?: string | boolean | null
   Data_Periodo_Pluviometro_Fim?: string | null
   Data_Periodo_Pluviometro_Inicio?: string | null
   Data_Periodo_Registrador_Chuva_Fim?: string | null
@@ -28,10 +30,16 @@ export interface HidroStation {
   Data_Periodo_Telemetrica_Inicio?: string | null
   Data_Periodo_Telemetrica_Fim?: string | null
   Data_Ultima_Atualizacao?: string | null
-  Tipo_Estacao_Pluviometro?: string | null
-  Tipo_Estacao_Registrador_Chuva?: string | null
-  Tipo_Estacao_Registrador_Nivel?: string | null
-  Tipo_Estacao_Telemetrica?: string | null
+  Tipo_Estacao_Pluviometro?: string | boolean | null
+  Tipo_Estacao_Registrador_Chuva?: string | boolean | null
+  Tipo_Estacao_Registrador_Nivel?: string | boolean | null
+  Tipo_Estacao_Telemetrica?: string | boolean | null
+  Tipo_Estacao_Climatologica?: string | boolean | null
+  Tipo_Estacao_Qual_Agua?: string | boolean | null
+  Tipo_Estacao_Sedimentos?: string | boolean | null
+  Tipo_Rede_Basica?: string | boolean | null
+  Tipo_Rede_Captacao?: string | boolean | null
+  Tipo_Rede_Qual_Agua?: string | boolean | null
 }
 
 function toNumber(val: string | number | null | undefined): number | null {
@@ -39,6 +47,34 @@ function toNumber(val: string | number | null | undefined): number | null {
   if (typeof val === 'number') return isFinite(val) ? val : null
   const n = Number(String(val).replace(',', '.'))
   return isNaN(n) ? null : n
+}
+
+function toBoolean(val: string | number | boolean | null | undefined): boolean {
+  if (val === null || val === undefined) return false
+  if (typeof val === 'boolean') return val
+  const str = String(val).trim()
+  if (str === '1') return true
+  if (str === '0') return false
+  const normalized = str.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '')
+  return normalized === 'sim' || normalized === 'true' || normalized === 'yes'
+}
+
+// Normalize station data from API response
+function normalizeStation(raw: any): HidroStation {
+  return {
+    ...raw,
+    Operando: toBoolean(raw.Operando),
+    Tipo_Estacao_Pluviometro: toBoolean(raw.Tipo_Estacao_Pluviometro),
+    Tipo_Estacao_Registrador_Chuva: toBoolean(raw.Tipo_Estacao_Registrador_Chuva),
+    Tipo_Estacao_Registrador_Nivel: toBoolean(raw.Tipo_Estacao_Registrador_Nivel),
+    Tipo_Estacao_Telemetrica: toBoolean(raw.Tipo_Estacao_Telemetrica),
+    Tipo_Estacao_Climatologica: toBoolean(raw.Tipo_Estacao_Climatologica),
+    Tipo_Estacao_Qual_Agua: toBoolean(raw.Tipo_Estacao_Qual_Agua),
+    Tipo_Estacao_Sedimentos: toBoolean(raw.Tipo_Estacao_Sedimentos),
+    Tipo_Rede_Basica: toBoolean(raw.Tipo_Rede_Basica),
+    Tipo_Rede_Captacao: toBoolean(raw.Tipo_Rede_Captacao),
+    Tipo_Rede_Qual_Agua: toBoolean(raw.Tipo_Rede_Qual_Agua),
+  }
 }
 
 function Recenter({ center }: { center: [number, number] }) {
@@ -53,6 +89,8 @@ export function MapView() {
   const [stations, setStations] = useState<HidroStation[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [syncingStation, setSyncingStation] = useState<string | null>(null)
+  const [dashboardStation, setDashboardStation] = useState<string | null>(null)
   // Default to Goiás (GO) instead of RS
   const [uf, setUf] = useState('GO')
   const [qInput, setQInput] = useState('')
@@ -95,7 +133,9 @@ export function MapView() {
         const res = await api.getAll(`/api/ana/estacoes/hidro`, {
           params: { unidadefederativa: uf, q: q || undefined },
         })
-        if (!cancelled) setStations(res)
+        // Normalize all stations to convert "0"/"1" to boolean
+        const normalized = res.map((s: any) => normalizeStation(s))
+        if (!cancelled) setStations(normalized)
       } catch (e: any) {
         if (!cancelled) setError(e?.message || 'Erro ao carregar estações')
       } finally {
@@ -106,15 +146,102 @@ export function MapView() {
     return () => { cancelled = true }
   }, [uf, q])
 
+  // Centro e zoom baseado no estado selecionado
   const center = useMemo<[number, number]>(() => {
-    // Centro aproximado de Goiás
-    return [-15.827, -49.836]
-  }, [])
+    const centers: Record<string, [number, number]> = {
+      'GO': [-15.827, -49.836],  // Goiás
+      'RS': [-30.034, -51.217],  // Rio Grande do Sul
+      'SP': [-23.550, -46.633],  // São Paulo
+      'MG': [-19.817, -43.956],  // Minas Gerais
+      'PR': [-25.252, -52.021],  // Paraná
+      'SC': [-27.595, -48.548],  // Santa Catarina
+      'BA': [-12.971, -38.511],  // Bahia
+      'MT': [-15.601, -56.097],  // Mato Grosso
+      'MS': [-20.469, -54.620],  // Mato Grosso do Sul
+      'PA': [-1.455, -48.490],   // Pará
+      'AM': [-3.119, -60.021],   // Amazonas
+      'RO': [-8.761, -63.904],   // Rondônia
+      'AC': [-8.770, -70.550],   // Acre
+      'TO': [-10.249, -48.324],  // Tocantins
+      'MA': [-2.530, -44.303],   // Maranhão
+      'PI': [-5.089, -42.803],   // Piauí
+      'CE': [-3.717, -38.543],   // Ceará
+      'RN': [-5.795, -36.954],   // Rio Grande do Norte
+      'PB': [-7.115, -34.863],   // Paraíba
+      'PE': [-8.047, -34.877],   // Pernambuco
+      'AL': [-9.665, -35.735],   // Alagoas
+      'SE': [-10.925, -37.073],  // Sergipe
+      'ES': [-20.319, -40.338],  // Espírito Santo
+      'RJ': [-22.906, -43.173],  // Rio de Janeiro
+      'DF': [-15.793, -47.883],  // Distrito Federal
+      'RR': [2.820, -60.675],    // Roraima
+      'AP': [0.034, -51.066],    // Amapá
+    }
+    return centers[uf] || centers['GO']
+  }, [uf])
+  
   const zoom = 7
 
   // Create custom marker icons for active/inactive stations
   const activeIcon = useMemo(() => createStationMarkerIcon(true), [])
   const inactiveIcon = useMemo(() => createStationMarkerIcon(false), [])
+
+  // Função para buscar dados detalhados de uma estação
+  const handleSyncSeriesData = async (codigoEstacao: string) => {
+    if (syncingStation) {
+      alert('Aguarde a sincronização anterior terminar.')
+      return
+    }
+
+    const confirm = window.confirm(
+      `Deseja buscar os dados detalhados da estação ${codigoEstacao}?\n\n` +
+      `Isso irá:\n` +
+      `• Buscar séries de chuva, vazão e nível dos últimos 12 meses\n` +
+      `• Armazenar no banco de dados para análises futuras\n` +
+      `• Pode levar alguns segundos`
+    )
+
+    if (!confirm) return
+
+    setSyncingStation(codigoEstacao)
+    
+    try {
+      // Calcular datas (últimos 12 meses)
+      const dataFim = new Date().toISOString().split('T')[0]
+      const dataInicio = new Date()
+      dataInicio.setMonth(dataInicio.getMonth() - 12)
+      const dataInicioStr = dataInicio.toISOString().split('T')[0]
+
+      const response = await api.post('/api/ana/series/sync', {
+        codigoEstacao,
+        dataInicio: dataInicioStr,
+        dataFim: dataFim,
+        // tipo: undefined = busca todos (chuva, vazao, nivel)
+      })
+
+      const result = response.data
+      let message = `✅ Dados sincronizados com sucesso!\n\n`
+      
+      if (result.chuva) {
+        message += `💧 Chuva: ${result.chuva.upserted || result.chuva.total || 0} registros\n`
+      }
+      if (result.vazao) {
+        message += `🌊 Vazão: ${result.vazao.upserted || result.vazao.total || 0} registros\n`
+      }
+      if (result.nivel) {
+        message += `📏 Nível: ${result.nivel.upserted || result.nivel.total || 0} registros\n`
+      }
+
+      message += `\n📊 Agora você pode visualizar esses dados em dashboards!`
+      
+      alert(message)
+    } catch (error: any) {
+      console.error('Erro ao sincronizar dados:', error)
+      alert(`❌ Erro ao buscar dados:\n\n${error?.response?.data?.error || error?.message || 'Erro desconhecido'}`)
+    } finally {
+      setSyncingStation(null)
+    }
+  }
 
   function dateSerial(val: any): number | null {
     if (val === null || val === undefined) return null
@@ -157,9 +284,9 @@ export function MapView() {
     const base = stations.filter((s) => {
       if (tipo && (s.Tipo_Estacao || '').trim() !== tipo) return false
       if (operando !== 'Todos') {
-        const val = (s.Operando || '').toString().normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase()
-        const target = operando === 'Sim' ? 'SIM' : 'NAO'
-        if (val !== target) return false
+        const isOperating = typeof s.Operando === 'boolean' ? s.Operando : toBoolean(s.Operando)
+        const target = operando === 'Sim'
+        if (isOperating !== target) return false
       }
       if (rio && !(s.Rio_Nome || '').toLowerCase().includes(rio.toLowerCase())) return false
       // Date filters (optional)
@@ -190,11 +317,27 @@ export function MapView() {
       if (ultAtualFrom || ultAtualTo) {
         if (!inRange(s.Data_Ultima_Atualizacao, ultAtualFrom, ultAtualTo)) return false
       }
-      // Tipo_Estacao_* selectors
-      if (tipoPluviometro && (s.Tipo_Estacao_Pluviometro || '').trim() !== tipoPluviometro) return false
-      if (tipoRegChuva && (s.Tipo_Estacao_Registrador_Chuva || '').trim() !== tipoRegChuva) return false
-      if (tipoRegNivel && (s.Tipo_Estacao_Registrador_Nivel || '').trim() !== tipoRegNivel) return false
-      if (tipoTelemetrica && (s.Tipo_Estacao_Telemetrica || '').trim() !== tipoTelemetrica) return false
+      // Tipo_Estacao_* selectors (now boolean)
+      if (tipoPluviometro) {
+        const hasType = typeof s.Tipo_Estacao_Pluviometro === 'boolean' ? s.Tipo_Estacao_Pluviometro : toBoolean(s.Tipo_Estacao_Pluviometro)
+        if (tipoPluviometro === 'true' && !hasType) return false
+        if (tipoPluviometro === 'false' && hasType) return false
+      }
+      if (tipoRegChuva) {
+        const hasType = typeof s.Tipo_Estacao_Registrador_Chuva === 'boolean' ? s.Tipo_Estacao_Registrador_Chuva : toBoolean(s.Tipo_Estacao_Registrador_Chuva)
+        if (tipoRegChuva === 'true' && !hasType) return false
+        if (tipoRegChuva === 'false' && hasType) return false
+      }
+      if (tipoRegNivel) {
+        const hasType = typeof s.Tipo_Estacao_Registrador_Nivel === 'boolean' ? s.Tipo_Estacao_Registrador_Nivel : toBoolean(s.Tipo_Estacao_Registrador_Nivel)
+        if (tipoRegNivel === 'true' && !hasType) return false
+        if (tipoRegNivel === 'false' && hasType) return false
+      }
+      if (tipoTelemetrica) {
+        const hasType = typeof s.Tipo_Estacao_Telemetrica === 'boolean' ? s.Tipo_Estacao_Telemetrica : toBoolean(s.Tipo_Estacao_Telemetrica)
+        if (tipoTelemetrica === 'true' && !hasType) return false
+        if (tipoTelemetrica === 'false' && hasType) return false
+      }
       return true
     })
 
@@ -279,8 +422,15 @@ export function MapView() {
   }, [stations])
 
   return (
-    <div className="map-root">
-      <div className="panel">
+    <>
+      {dashboardStation && (
+        <StationDashboard 
+          codigoEstacao={dashboardStation} 
+          onClose={() => setDashboardStation(null)} 
+        />
+      )}
+      <div className="map-root">
+        <div className="panel">
         <div className="panel-header">
           <h1 className="panel-title">
             <span>💧</span> Estações Hidrológicas - ANA
@@ -312,10 +462,34 @@ export function MapView() {
         <div className="panel-row">
           <label>
             Estado (UF):
-            <select value={uf} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setUf(e.target.value)}>
-              {['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'].map(u => (
-                <option key={u} value={u}>{u}</option>
-              ))}
+            <select value={uf} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setUf(e.target.value)} title="Selecione o estado para visualizar estações">
+              <option value="GO">GO - Goiás</option>
+              <option value="RS">RS - Rio Grande do Sul</option>
+              <option value="SP">SP - São Paulo</option>
+              <option value="MG">MG - Minas Gerais</option>
+              <option value="PR">PR - Paraná</option>
+              <option value="SC">SC - Santa Catarina</option>
+              <option value="BA">BA - Bahia</option>
+              <option value="MT">MT - Mato Grosso</option>
+              <option value="MS">MS - Mato Grosso do Sul</option>
+              <option value="PA">PA - Pará</option>
+              <option value="AM">AM - Amazonas</option>
+              <option value="RO">RO - Rondônia</option>
+              <option value="AC">AC - Acre</option>
+              <option value="TO">TO - Tocantins</option>
+              <option value="MA">MA - Maranhão</option>
+              <option value="PI">PI - Piauí</option>
+              <option value="CE">CE - Ceará</option>
+              <option value="RN">RN - Rio Grande do Norte</option>
+              <option value="PB">PB - Paraíba</option>
+              <option value="PE">PE - Pernambuco</option>
+              <option value="AL">AL - Alagoas</option>
+              <option value="SE">SE - Sergipe</option>
+              <option value="ES">ES - Espírito Santo</option>
+              <option value="RJ">RJ - Rio de Janeiro</option>
+              <option value="DF">DF - Distrito Federal</option>
+              <option value="RR">RR - Roraima</option>
+              <option value="AP">AP - Amapá</option>
             </select>
           </label>
           <label>
@@ -368,19 +542,23 @@ export function MapView() {
           <div className="panel-row">
             <label>Tipo Pluviômetro: <select value={tipoPluviometro} onChange={e=>setTipoPluviometro(e.target.value)}>
               <option value="">Todos</option>
-              {Array.from(new Set(stations.map(s => (s.Tipo_Estacao_Pluviometro || '').trim()).filter(Boolean))).sort().map(v => (<option key={v} value={v}>{v}</option>))}
+              <option value="true">✓ Possui</option>
+              <option value="false">✗ Não possui</option>
             </select></label>
             <label>Tipo Reg. Chuva: <select value={tipoRegChuva} onChange={e=>setTipoRegChuva(e.target.value)}>
               <option value="">Todos</option>
-              {Array.from(new Set(stations.map(s => (s.Tipo_Estacao_Registrador_Chuva || '').trim()).filter(Boolean))).sort().map(v => (<option key={v} value={v}>{v}</option>))}
+              <option value="true">✓ Possui</option>
+              <option value="false">✗ Não possui</option>
             </select></label>
             <label>Tipo Reg. Nível: <select value={tipoRegNivel} onChange={e=>setTipoRegNivel(e.target.value)}>
               <option value="">Todos</option>
-              {Array.from(new Set(stations.map(s => (s.Tipo_Estacao_Registrador_Nivel || '').trim()).filter(Boolean))).sort().map(v => (<option key={v} value={v}>{v}</option>))}
+              <option value="true">✓ Possui</option>
+              <option value="false">✗ Não possui</option>
             </select></label>
             <label>Tipo Telemétrica: <select value={tipoTelemetrica} onChange={e=>setTipoTelemetrica(e.target.value)}>
               <option value="">Todos</option>
-              {Array.from(new Set(stations.map(s => (s.Tipo_Estacao_Telemetrica || '').trim()).filter(Boolean))).sort().map(v => (<option key={v} value={v}>{v}</option>))}
+              <option value="true">✓ Possui</option>
+              <option value="false">✗ Não possui</option>
             </select></label>
           </div>
         </details>
@@ -411,24 +589,20 @@ export function MapView() {
       </div>
       <MapContainer center={center} zoom={zoom} className="map-container">
         <Recenter center={center} />
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> | &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          maxZoom={20}
-        />
+        <MapLayerControl />
         {filteredStations.map((s) => {
           const lat = toNumber(s.Latitude)
           const lng = toNumber(s.Longitude)
           if (lat === null || lng === null) return null
           const position: [number, number] = [lat, lng]
           
-          // Determine if station is active
-          const isActive = String(s.Operando || '').toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').includes('sim')
+          // Determine if station is active (now it's a boolean)
+          const isActive = typeof s.Operando === 'boolean' ? s.Operando : toBoolean(s.Operando)
           const markerIcon = isActive ? activeIcon : inactiveIcon
           
           return (
             <Marker key={s.codigoestacao} position={position} icon={markerIcon}>
-              <Popup maxWidth={300}>
+              <Popup maxWidth={320}>
                 <div style={{ lineHeight: '1.6' }}>
                   <div style={{ marginBottom: '8px', paddingBottom: '8px', borderBottom: '2px solid #0284c7' }}>
                     <strong style={{ fontSize: '1.1em', color: '#0284c7' }}>{s.Estacao_Nome || 'Sem nome'}</strong>
@@ -439,13 +613,62 @@ export function MapView() {
                     {s.Rio_Nome && <div><strong>🌊 Rio:</strong> {s.Rio_Nome}</div>}
                     {s.Tipo_Estacao && <div><strong>📊 Tipo:</strong> {s.Tipo_Estacao}</div>}
                     {typeof s.Operando !== 'undefined' && s.Operando !== null && (
-                      <div><strong>⚡ Status:</strong> <span style={{ color: String(s.Operando).toLowerCase().includes('sim') ? '#10b981' : '#ef4444', fontWeight: 600 }}>
-                        {String(s.Operando).toLowerCase().includes('sim') ? '✓ Operando' : '✗ Inativa'}
+                      <div><strong>⚡ Status:</strong> <span style={{ color: isActive ? '#10b981' : '#ef4444', fontWeight: 600 }}>
+                        {isActive ? '✓ Operando' : '✗ Inativa'}
                       </span></div>
                     )}
                     <div style={{ marginTop: '4px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', fontSize: '0.85em', color: '#64748b' }}>
                       <strong>🗺️ Coordenadas:</strong> {lat.toFixed(5)}°, {lng.toFixed(5)}°
                     </div>
+                  </div>
+                  <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button
+                      onClick={() => setDashboardStation(s.codigoestacao)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: '#10b981',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.background = '#059669'}
+                      onMouseOut={(e) => e.currentTarget.style.background = '#10b981'}
+                    >
+                      📊 Ver Dashboard Completo
+                    </button>
+                    <button
+                      onClick={() => handleSyncSeriesData(s.codigoestacao)}
+                      disabled={syncingStation === s.codigoestacao}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: syncingStation === s.codigoestacao ? '#9ca3af' : '#0284c7',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '6px',
+                        cursor: syncingStation === s.codigoestacao ? 'not-allowed' : 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        transition: 'all 0.2s',
+                      }}
+                      onMouseOver={(e) => {
+                        if (syncingStation !== s.codigoestacao) {
+                          e.currentTarget.style.background = '#0369a1'
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        if (syncingStation !== s.codigoestacao) {
+                          e.currentTarget.style.background = '#0284c7'
+                        }
+                      }}
+                    >
+                      {syncingStation === s.codigoestacao ? '⏳ Sincronizando...' : '� Buscar Dados da ANA'}
+                    </button>
                   </div>
                 </div>
               </Popup>
@@ -453,6 +676,7 @@ export function MapView() {
           )
         })}
       </MapContainer>
-    </div>
+      </div>
+    </>
   )
 }

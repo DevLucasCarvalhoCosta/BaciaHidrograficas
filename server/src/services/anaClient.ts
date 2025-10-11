@@ -47,6 +47,71 @@ export class AnaClient {
     return { token, raw: resp.data };
   }
 
+  /**
+   * Busca séries telemétricas detalhadas (endpoint unificado v2)
+   * Endpoint: /EstacoesTelemetricas/HidroinfoanaSerieTelemetricaDetalhada/v2
+   * 
+   * Este endpoint retorna TODOS os dados em um único objeto:
+   * - Chuva (acumulada, adotada)
+   * - Cota/Nível (sensor, adotada, display, manual)
+   * - Vazão (adotada)
+   * - Temperatura (água, interna)
+   * - Pressão atmosférica
+   * - Bateria
+   * 
+   * Parâmetros esperados pela API da ANA:
+   * - Codigos_Estacoes: código(s) da(s) estação(ões) separados por vírgula
+   * - Tipo Filtro Data: DATA_LEITURA (tipo do filtro de data)
+   * - Data de Busca: data no formato yyyy-MM-dd
+   * - Range Intervalo de busca: DIAS_30, HORA_1, MINUTO_5, etc.
+   */
+  async getSerieTelemetricaDetalhada(
+    token: string,
+    params: {
+      codigoEstacao: string | string[]  // Aceita um código ou array de códigos
+      tipoFiltroData?: string            // Padrão: DATA_LEITURA
+      dataBusca: string                  // Data no formato yyyy-MM-dd
+      rangeIntervalo?: string            // Padrão: DIAS_30
+    }
+  ): Promise<unknown[]> {
+    if (!token) throw new Error('Token é obrigatório para consultar séries telemétricas.');
+    if (!params.codigoEstacao) throw new Error('Código da estação é obrigatório.');
+    if (!params.dataBusca) throw new Error('Data de busca é obrigatória.');
+    
+    // Normalizar código(s) da estação
+    const codigos = Array.isArray(params.codigoEstacao) 
+      ? params.codigoEstacao.join(',')
+      : params.codigoEstacao;
+    
+    const search: Record<string, string> = {
+      'Codigos_Estacoes': codigos,
+      'Tipo Filtro Data': params.tipoFiltroData ?? 'DATA_LEITURA',
+      'Data de Busca (yyyy-MM-dd)': params.dataBusca,
+      'Range Intervalo de busca': params.rangeIntervalo ?? 'DIAS_30',
+    };
+
+    try {
+      console.log('[ANA Detalhada] GET /EstacoesTelemetricas/HidroinfoanaSerieTelemetricaDetalhada/v2 params =', search);
+      const cleanToken = token.replace(/[\r\n\t]/g, '').trim();
+      const resp = await this.http.get('/EstacoesTelemetricas/HidroinfoanaSerieTelemetricaDetalhada/v2', {
+        headers: { Authorization: `Bearer ${cleanToken}`, Accept: 'application/json, text/plain, */*' },
+        params: search,
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+      console.log('[ANA Detalhada] status =', resp.status);
+      if (resp.status >= 400) {
+        const msg = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+        throw new Error(`Falha ao obter série telemetrica detalhada (${resp.status}): ${msg}`);
+      }
+      const arr = normalizeItemsArray(resp.data);
+      console.log('[ANA Detalhada] items count =', Array.isArray(arr) ? arr.length : 0);
+      return arr;
+    } catch (e) {
+      console.error('[ANA Detalhada] request failed:', (e as any)?.message || e);
+      throw e;
+    }
+  }
+
 
   async getHidrosatInventarioEstacoes(token: string): Promise<unknown[]> {
     if (!token) throw new Error('Token é obrigatório para consultar o inventário Hidrosat.');
@@ -94,6 +159,172 @@ export class AnaClient {
       return arr;
     } catch (e) {
       console.error('[ANA HIDRO] request failed:', (e as any)?.message || e);
+      throw e;
+    }
+  }
+
+  /**
+   * Busca séries telemétricas de chuva (pluviometria)
+   * Endpoint: /EstacoesTelemetricas/SerieTelemetricaChuva/v1
+   * 
+   * Parâmetros esperados pela API da ANA:
+   * - Codigos_Estacoes: código(s) da(s) estação(ões) separados por vírgula
+   * - Tipo Filtro Data: tipo do filtro (ex: DATA_ULTIMA_ATUALIZACAO)
+   * - Range Intervalo de busca: intervalo (DIAS_30, MINUTO_5, HORA_1, etc.)
+   */
+  async getSerieTelemetricaChuva(
+    token: string,
+    params: {
+      codigoEstacao: string | string[]  // Aceita um código ou array de códigos
+      tipoFiltroData?: string            // Padrão: DATA_LEITURA
+      dataBusca: string                  // Data no formato yyyy-MM-dd
+      rangeIntervalo?: string            // Padrão: DIAS_30
+    }
+  ): Promise<unknown[]> {
+    if (!token) throw new Error('Token é obrigatório para consultar séries de chuva.');
+    if (!params.codigoEstacao) throw new Error('Código da estação é obrigatório.');
+    if (!params.dataBusca) throw new Error('Data de busca é obrigatória.');
+    
+    // Normalizar código(s) da estação
+    const codigos = Array.isArray(params.codigoEstacao) 
+      ? params.codigoEstacao.join(',')
+      : params.codigoEstacao;
+    
+    const search: Record<string, string> = {
+      'Codigos_Estacoes': codigos,
+      'Tipo Filtro Data': params.tipoFiltroData ?? 'DATA_LEITURA',
+      'Data de Busca': params.dataBusca,
+      'Range Intervalo de busca': params.rangeIntervalo ?? 'DIAS_30',
+    };
+
+    try {
+      console.log('[ANA Chuva] GET /EstacoesTelemetricas/SerieTelemetricaChuva/v1 params =', search);
+      const cleanToken = token.replace(/[\r\n\t]/g, '').trim();
+      const resp = await this.http.get('/EstacoesTelemetricas/SerieTelemetricaChuva/v1', {
+        headers: { Authorization: `Bearer ${cleanToken}`, Accept: 'application/json, text/plain, */*' },
+        params: search,
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+      console.log('[ANA Chuva] status =', resp.status);
+      if (resp.status >= 400) {
+        const msg = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+        throw new Error(`Falha ao obter série de chuva (${resp.status}): ${msg}`);
+      }
+      const arr = normalizeItemsArray(resp.data);
+      console.log('[ANA Chuva] items count =', Array.isArray(arr) ? arr.length : 0);
+      return arr;
+    } catch (e) {
+      console.error('[ANA Chuva] request failed:', (e as any)?.message || e);
+      throw e;
+    }
+  }
+
+  /**
+   * Busca séries telemétricas de vazão
+   * Endpoint: /EstacoesTelemetricas/SerieTelemetricaVazao/v1
+   * 
+   * Parâmetros esperados pela API da ANA:
+   * - Codigos_Estacoes: código(s) da(s) estação(ões) separados por vírgula
+   * - Tipo Filtro Data: tipo do filtro (ex: DATA_ULTIMA_ATUALIZACAO)
+   * - Range Intervalo de busca: intervalo (DIAS_30, MINUTO_5, HORA_1, etc.)
+   */
+  async getSerieTelemetricaVazao(
+    token: string,
+    params: {
+      codigoEstacao: string | string[]
+      tipoFiltroData?: string
+      dataBusca: string
+      rangeIntervalo?: string
+    }
+  ): Promise<unknown[]> {
+    if (!token) throw new Error('Token é obrigatório para consultar séries de vazão.');
+    if (!params.codigoEstacao) throw new Error('Código da estação é obrigatório.');
+    if (!params.dataBusca) throw new Error('Data de busca é obrigatória.');
+    
+    const codigos = Array.isArray(params.codigoEstacao) 
+      ? params.codigoEstacao.join(',')
+      : params.codigoEstacao;
+    
+    const search: Record<string, string> = {
+      'Codigos_Estacoes': codigos,
+      'Tipo Filtro Data': params.tipoFiltroData ?? 'DATA_LEITURA',
+      'Data de Busca': params.dataBusca,
+      'Range Intervalo de busca': params.rangeIntervalo ?? 'DIAS_30',
+    };
+
+    try {
+      console.log('[ANA Vazão] GET /EstacoesTelemetricas/SerieTelemetricaVazao/v1 params =', search);
+      const cleanToken = token.replace(/[\r\n\t]/g, '').trim();
+      const resp = await this.http.get('/EstacoesTelemetricas/SerieTelemetricaVazao/v1', {
+        headers: { Authorization: `Bearer ${cleanToken}`, Accept: 'application/json, text/plain, */*' },
+        params: search,
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+      console.log('[ANA Vazão] status =', resp.status);
+      if (resp.status >= 400) {
+        const msg = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+        throw new Error(`Falha ao obter série de vazão (${resp.status}): ${msg}`);
+      }
+      const arr = normalizeItemsArray(resp.data);
+      console.log('[ANA Vazão] items count =', Array.isArray(arr) ? arr.length : 0);
+      return arr;
+    } catch (e) {
+      console.error('[ANA Vazão] request failed:', (e as any)?.message || e);
+      throw e;
+    }
+  }
+
+  /**
+   * Busca séries telemétricas de nível (cota)
+   * Endpoint: /EstacoesTelemetricas/SerieTelemetricaNivel/v1
+   * 
+   * Parâmetros esperados pela API da ANA:
+   * - Codigos_Estacoes: código(s) da(s) estação(ões) separados por vírgula
+   * - Tipo Filtro Data: tipo do filtro (ex: DATA_ULTIMA_ATUALIZACAO)
+   * - Range Intervalo de busca: intervalo (DIAS_30, MINUTO_5, HORA_1, etc.)
+   */
+  async getSerieTelemetricaNivel(
+    token: string,
+    params: {
+      codigoEstacao: string | string[]
+      tipoFiltroData?: string
+      dataBusca: string
+      rangeIntervalo?: string
+    }
+  ): Promise<unknown[]> {
+    if (!token) throw new Error('Token é obrigatório para consultar séries de nível.');
+    if (!params.codigoEstacao) throw new Error('Código da estação é obrigatório.');
+    if (!params.dataBusca) throw new Error('Data de busca é obrigatória.');
+    
+    const codigos = Array.isArray(params.codigoEstacao) 
+      ? params.codigoEstacao.join(',')
+      : params.codigoEstacao;
+    
+    const search: Record<string, string> = {
+      'Codigos_Estacoes': codigos,
+      'Tipo Filtro Data': params.tipoFiltroData ?? 'DATA_LEITURA',
+      'Data de Busca': params.dataBusca,
+      'Range Intervalo de busca': params.rangeIntervalo ?? 'DIAS_30',
+    };
+
+    try {
+      console.log('[ANA Nível] GET /EstacoesTelemetricas/SerieTelemetricaNivel/v1 params =', search);
+      const cleanToken = token.replace(/[\r\n\t]/g, '').trim();
+      const resp = await this.http.get('/EstacoesTelemetricas/SerieTelemetricaNivel/v1', {
+        headers: { Authorization: `Bearer ${cleanToken}`, Accept: 'application/json, text/plain, */*' },
+        params: search,
+        validateStatus: (s) => s >= 200 && s < 500,
+      });
+      console.log('[ANA Nível] status =', resp.status);
+      if (resp.status >= 400) {
+        const msg = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
+        throw new Error(`Falha ao obter série de nível (${resp.status}): ${msg}`);
+      }
+      const arr = normalizeItemsArray(resp.data);
+      console.log('[ANA Nível] items count =', Array.isArray(arr) ? arr.length : 0);
+      return arr;
+    } catch (e) {
+      console.error('[ANA Nível] request failed:', (e as any)?.message || e);
       throw e;
     }
   }

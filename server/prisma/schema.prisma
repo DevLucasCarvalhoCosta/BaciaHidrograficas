@@ -94,4 +94,51 @@ model HidroStation {
   codigobacia                          String?
   criadaEm                             DateTime @default(now())
   atualizadaEm                         DateTime @updatedAt
+  
+  // Relações com séries de dados
+  seriesTelemetricas SerieTelemetrica[]
+}
+
+// Séries Telemétricas - Dados completos da estação (estrutura real da ANA)
+model SerieTelemetrica {
+  id                          String       @id @default(cuid())
+  codigoestacao               String
+  Data_Hora_Medicao           DateTime
+  Data_Atualizacao            String?
+  
+  // Dados de Chuva
+  Chuva_Acumulada             String?
+  Chuva_Acumulada_Status      String?
+  Chuva_Adotada               String?
+  Chuva_Adotada_Status        String?
+  
+  // Dados de Cota/Nível
+  Cota_Sensor                 String?
+  Cota_Sensor_Status          String?
+  Cota_Adotada                String?
+  Cota_Adotada_Status         String?
+  Cota_Display                String?
+  Cota_Display_Status         String?
+  Cota_Manual                 String?
+  Cota_Manual_Status          String?
+  
+  // Dados de Vazão
+  Vazao_Adotada               String?
+  Vazao_Adotada_Status        String?
+  
+  // Dados Ambientais
+  Temperatura_Agua            String?
+  Temperatura_Agua_Status     String?
+  Temperatura_Interna         String?
+  Pressao_Atmosferica         String?
+  Pressao_Atmosferica_Status  String?
+  
+  // Dados de Equipamento
+  Bateria                     String?
+  
+  estacao                     HidroStation @relation(fields: [codigoestacao], references: [codigoestacao], onDelete: Cascade)
+  criadaEm                    DateTime     @default(now())
+  
+  @@unique([codigoestacao, Data_Hora_Medicao])
+  @@index([codigoestacao, Data_Hora_Medicao])
 }

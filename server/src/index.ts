@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 
 import { router as anaRouter } from './routes/ana';
+import dashboardRouter from './routes/dashboard';
 
 const app = express();
 
@@ -21,6 +22,7 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/ana', anaRouter);
+app.use('/api/dashboard', dashboardRouter);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(PORT, () => {

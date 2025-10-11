@@ -28,6 +28,44 @@ export const api = {
       clearTimeout(timeout)
     }
   },
+  async post(url: string, body?: any, options?: { timeout?: number }) {
+    const base = API_BASE_URL || ''
+    const href = `${base}${url}`
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), options?.timeout || 30000) // 30s default for POST
+    try {
+      const resp = await fetch(href, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json' 
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      })
+      if (!resp.ok) {
+        const text = await resp.text().catch(() => '')
+        let errorData: any
+        try {
+          errorData = JSON.parse(text)
+        } catch {
+          errorData = { error: text || `HTTP ${resp.status}` }
+        }
+        const error: any = new Error(errorData.error || `HTTP ${resp.status}`)
+        error.response = { data: errorData }
+        throw error
+      }
+      return await resp.json()
+    } catch (e: any) {
+      if (e.response) throw e // já formatado
+      const reason = e?.name === 'AbortError' ? 'timeout' : (e?.message || 'network error')
+      const error: any = new Error(`Fetch failed for ${href}: ${reason}`)
+      error.response = { data: { error: reason } }
+      throw error
+    } finally {
+      clearTimeout(timeout)
+    }
+  },
   async getAll(
     url: string,
     options?: { params?: Record<string, any> },

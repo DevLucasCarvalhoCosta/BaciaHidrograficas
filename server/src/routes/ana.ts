@@ -583,3 +583,406 @@ router.get('/estacoes', async (req: Request, res: Response) => {
     return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
   }
 });
+
+// ============================================
+// SÉRIES TELEMÉTRICAS - Buscar e armazenar dados detalhados
+// ============================================
+
+const SerieTelemetricaSchema = z.object({
+  token: z.string().optional(),
+  identificador: z.string().optional(),
+  senha: z.string().optional(),
+  codigoEstacao: z.string().refine(val => val === '75650010', {
+    message: 'Somente a estação 75650010 está disponível no momento',
+  }),
+  // Novos parâmetros conforme interface da ANA
+  tipoFiltroData: z.string().optional(), // ex: DATA_LEITURA (padrão)
+  dataBusca: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato yyyy-MM-dd'), // ex: 2025-10-01
+  rangeIntervalo: z.string().optional(),  // ex: DIAS_30, MINUTO_5, HORA_1, etc.
+  tipo: z.enum(['chuva', 'vazao', 'nivel']).optional(), // Se não informado, busca todos
+});
+
+/**
+ * GET /api/ana/series/test/:codigoEstacao
+ * Endpoint de teste para ver a estrutura dos dados da ANA
+ * Query params OBRIGATÓRIOS:
+ * - dataBusca: data de referência no formato yyyy-MM-dd (ex: 2025-10-01)
+ * Query params opcionais:
+ * - tipoFiltroData: tipo do filtro (padrão: DATA_LEITURA)
+ * - rangeIntervalo: intervalo de busca (padrão: DIAS_30)
+ * 
+ * NOTA: Atualmente restrito à estação 75650010
+ */
+router.get('/series/test/:codigoEstacao', async (req: Request, res: Response) => {
+  try {
+    const envBaseUrl = process.env.ANA_BASE_URL ?? '';
+    if (!envBaseUrl) return res.status(500).json({ error: 'Configuração ausente: defina ANA_BASE_URL no arquivo .env' });
+    
+    const client = new AnaClient({ baseURL: envBaseUrl });
+    const { codigoEstacao } = req.params;
+    
+    if (!codigoEstacao) {
+      return res.status(400).json({ error: 'Código da estação é obrigatório' });
+    }
+    
+    // Validar estação permitida
+    if (codigoEstacao !== '75650010') {
+      return res.status(403).json({
+        error: 'Acesso negado',
+        message: 'Somente a estação 75650010 está disponível no momento'
+      });
+    }
+    
+    // Validar dataBusca obrigatória
+    const dataBusca = req.query.dataBusca as string;
+    if (!dataBusca) {
+      return res.status(400).json({
+        error: 'Parâmetro obrigatório ausente',
+        message: 'dataBusca é obrigatório no formato yyyy-MM-dd (ex: ?dataBusca=2025-10-01)'
+      });
+    }
+    
+    // Validar formato da data
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dataBusca)) {
+      return res.status(400).json({
+        error: 'Formato de data inválido',
+        message: 'dataBusca deve estar no formato yyyy-MM-dd (ex: 2025-10-01)'
+      });
+    }
+
+    // Obter token
+    const identificador = process.env.ANA_IDENTIFICADOR ?? '';
+    const senha = process.env.ANA_SENHA ?? '';
+    if (!identificador || !senha) {
+      return res.status(400).json({ error: 'Configure ANA_IDENTIFICADOR e ANA_SENHA no .env' });
+    }
+    const login = await client.login(identificador, senha);
+    const token = login.token;
+
+    // Usar parâmetros da query ou valores padrão
+    const tipoFiltroData = (req.query.tipoFiltroData as string) ?? 'DATA_LEITURA';
+    const rangeIntervalo = (req.query.rangeIntervalo as string) ?? 'DIAS_30';
+
+    console.log(`\n[TEST] Buscando dados de teste para estação ${codigoEstacao}`);
+    console.log(`[TEST] Data: ${dataBusca}, Filtro: ${tipoFiltroData}, Intervalo: ${rangeIntervalo}`);
+
+    const results: any = {
+      codigoEstacao,
+      parametros: { dataBusca, tipoFiltroData, rangeIntervalo },
+      dadosDetalhados: null,
+    };
+
+    // Buscar dados do endpoint unificado (v2)
+    try {
+      const dadosDetalhados = await client.getSerieTelemetricaDetalhada(token, {
+        codigoEstacao,
+        tipoFiltroData,
+        dataBusca,
+        rangeIntervalo,
+      });
+      results.dadosDetalhados = {
+        total: Array.isArray(dadosDetalhados) ? dadosDetalhados.length : 0,
+        sample: Array.isArray(dadosDetalhados) ? dadosDetalhados.slice(0, 3) : null,
+        estruturaCompleta: dadosDetalhados,
+      };
+      console.log(`[TEST] Dados detalhados: ${results.dadosDetalhados.total} registros`);
+    } catch (error: any) {
+      results.dadosDetalhados = { error: error.message };
+      console.log(`[TEST] Dados detalhados: erro - ${error.message}`);
+    }
+
+    res.json(results);
+  } catch (error: any) {
+    console.error('[TEST] Erro geral:', error);
+    res.status(500).json({ 
+      error: 'Erro ao testar dados da ANA',
+      details: error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/ana/series/sync
+ * Busca séries telemétricas da ANA e armazena no banco
+ * Agora usa a estrutura unificada SerieTelemetrica que armazena TODOS os dados
+ */
+router.post('/series/sync', async (req: Request, res: Response) => {
+  try {
+    const envBaseUrl = process.env.ANA_BASE_URL ?? '';
+    if (!envBaseUrl) return res.status(500).json({ error: 'Configuração ausente: defina ANA_BASE_URL no arquivo .env' });
+    
+    const client = new AnaClient({ baseURL: envBaseUrl });
+    const parsed = SerieTelemetricaSchema.parse(req.body ?? {});
+    
+    // Obter token
+    let token = parsed.token;
+    if (!token) {
+      const identificador = parsed.identificador ?? process.env.ANA_IDENTIFICADOR ?? '';
+      const senha = parsed.senha ?? process.env.ANA_SENHA ?? '';
+      if (!identificador || !senha) {
+        return res.status(400).json({ error: 'Informe token ou credenciais (identificador, senha).' });
+      }
+      const login = await client.login(identificador, senha);
+      token = login.token;
+    }
+
+    const { codigoEstacao, tipoFiltroData, dataBusca, rangeIntervalo, tipo } = parsed;
+    const params = { 
+      codigoEstacao, 
+      tipoFiltroData: tipoFiltroData ?? 'DATA_LEITURA',
+      dataBusca,  // Obrigatório
+      rangeIntervalo: rangeIntervalo ?? 'DIAS_30',
+    };
+    const results: any = { 
+      codigoEstacao, 
+      parametros: { 
+        tipoFiltroData: params.tipoFiltroData,
+        dataBusca: params.dataBusca,
+        rangeIntervalo: params.rangeIntervalo,
+      },
+    };
+
+    // Buscar séries do endpoint unificado (v2)
+    let totalUpserted = 0;
+
+    try {
+      // Usar endpoint detalhado que traz todos os dados em uma única chamada
+      const items = await client.getSerieTelemetricaDetalhada(token!, params) as any[];
+
+      // Processar todos os registros na nova estrutura unificada
+      for (const it of items) {
+        const dataHoraMedicao = parseDataHora(it.Data_Hora_Medicao ?? it.DataHora ?? it.dataHora ?? it.Data);
+        if (!dataHoraMedicao) continue;
+
+        // Extrair todos os campos da API (mantendo como strings)
+        const data = {
+          codigoestacao: codigoEstacao,
+          Data_Hora_Medicao: dataHoraMedicao,
+          
+          // Campos de Chuva
+          Chuva_Acumulada: it.Chuva_Acumulada || null,
+          Chuva_Adotada: it.Chuva_Adotada || null,
+          Chuva_Acumulada_Status: it.Chuva_Acumulada_Status || null,
+          Chuva_Adotada_Status: it.Chuva_Adotada_Status || null,
+          
+          // Campos de Cota (Nível)
+          Cota_Sensor: it.Cota_Sensor || null,
+          Cota_Adotada: it.Cota_Adotada || null,
+          Cota_Display: it.Cota_Display || null,
+          Cota_Manual: it.Cota_Manual || null,
+          Cota_Sensor_Status: it.Cota_Sensor_Status || null,
+          Cota_Adotada_Status: it.Cota_Adotada_Status || null,
+          Cota_Display_Status: it.Cota_Display_Status || null,
+          Cota_Manual_Status: it.Cota_Manual_Status || null,
+          
+          // Campos de Vazão
+          Vazao_Adotada: it.Vazao_Adotada || null,
+          Vazao_Adotada_Status: it.Vazao_Adotada_Status || null,
+          
+          // Temperatura
+          Temperatura_Agua: it.Temperatura_Agua || null,
+          Temperatura_Agua_Status: it.Temperatura_Agua_Status || null,
+          Temperatura_Interna: it.Temperatura_Interna || null,
+          
+          // Outros sensores
+          Pressao_Atmosferica: it.Pressao_Atmosferica || null,
+          Pressao_Atmosferica_Status: it.Pressao_Atmosferica_Status || null,
+          Bateria: it.Bateria || null,
+          
+          // Data de atualização (mantendo como string)
+          Data_Atualizacao: it.Data_Atualizacao || null,
+        };
+
+        // Upsert no banco (usando a estrutura unificada)
+        await prisma.serieTelemetrica.upsert({
+            where: {
+              codigoestacao_Data_Hora_Medicao: {
+                codigoestacao: codigoEstacao,
+                Data_Hora_Medicao: dataHoraMedicao,
+              },
+            },
+            update: data,
+            create: data,
+          });
+          totalUpserted++;
+        }
+        
+        console.log(`[Séries Detalhadas] Processados ${items.length} registros, ${totalUpserted} inseridos/atualizados`);
+      } catch (e: any) {
+        console.error(`[Séries Detalhadas] Erro:`, e.message);
+        return res.status(500).json({ error: e.message });
+      }
+
+    return res.json({ 
+      total: totalUpserted, 
+      codigoEstacao, 
+      success: true 
+    });
+  } catch (err: any) {
+    const status = err?.response?.status ?? 500;
+    const message = err?.message ?? 'Erro ao sincronizar séries telemétricas';
+    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/ana/series/:codigoEstacao
+ * Retorna estatísticas das séries armazenadas para uma estação
+ */
+router.get('/series/:codigoEstacao', async (req: Request, res: Response) => {
+  try {
+    const codigoEstacao = req.params.codigoEstacao;
+    
+    // Contar total de registros telemetricos
+    const totalCount = await prisma.serieTelemetrica.count({ where: { codigoestacao: codigoEstacao } });
+
+    // Buscar período disponível
+    const [first, last] = await Promise.all([
+      prisma.serieTelemetrica.findFirst({ 
+        where: { codigoestacao: codigoEstacao }, 
+        orderBy: { Data_Hora_Medicao: 'asc' } 
+      }),
+      prisma.serieTelemetrica.findFirst({ 
+        where: { codigoestacao: codigoEstacao }, 
+        orderBy: { Data_Hora_Medicao: 'desc' } 
+      }),
+    ]);
+
+    // Contar registros com dados específicos
+    const [comChuva, comVazao, comCota, comTemperatura] = await Promise.all([
+      prisma.serieTelemetrica.count({ 
+        where: { 
+          codigoestacao: codigoEstacao,
+          OR: [
+            { Chuva_Acumulada: { not: null } },
+            { Chuva_Adotada: { not: null } }
+          ]
+        } 
+      }),
+      prisma.serieTelemetrica.count({ 
+        where: { 
+          codigoestacao: codigoEstacao,
+          Vazao_Adotada: { not: null }
+        } 
+      }),
+      prisma.serieTelemetrica.count({ 
+        where: { 
+          codigoestacao: codigoEstacao,
+          OR: [
+            { Cota_Sensor: { not: null } },
+            { Cota_Adotada: { not: null } }
+          ]
+        } 
+      }),
+      prisma.serieTelemetrica.count({ 
+        where: { 
+          codigoestacao: codigoEstacao,
+          OR: [
+            { Temperatura_Agua: { not: null } },
+            { Temperatura_Interna: { not: null } }
+          ]
+        } 
+      }),
+    ]);
+
+    return res.json({
+      codigoEstacao,
+      total: totalCount,
+      periodo: first && last ? {
+        inicio: first.Data_Hora_Medicao,
+        fim: last.Data_Hora_Medicao,
+      } : null,
+      tiposDados: {
+        chuva: comChuva,
+        vazao: comVazao,
+        cota: comCota,
+        temperatura: comTemperatura,
+      },
+    });
+  } catch (err: any) {
+    const status = err?.response?.status ?? 500;
+    const message = err?.message ?? 'Erro ao obter informações das séries';
+    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/ana/series/:codigoEstacao/:tipo
+ * Retorna dados de série específica (chuva, vazao, cota, temperatura ou all)
+ */
+router.get('/series/:codigoEstacao/:tipo', async (req: Request, res: Response) => {
+  try {
+    const { codigoEstacao, tipo } = req.params;
+    const limit = Math.min(1000, parseInt(String(req.query.limit ?? '100'), 10));
+    const offset = Math.max(0, parseInt(String(req.query.offset ?? '0'), 10));
+    const dataInicio = typeof req.query.dataInicio === 'string' ? req.query.dataInicio : undefined;
+    const dataFim = typeof req.query.dataFim === 'string' ? req.query.dataFim : undefined;
+
+    const where: any = { codigoestacao: codigoEstacao };
+    if (dataInicio || dataFim) {
+      where.Data_Hora_Medicao = {};
+      if (dataInicio) where.Data_Hora_Medicao.gte = new Date(dataInicio);
+      if (dataFim) where.Data_Hora_Medicao.lte = new Date(dataFim);
+    }
+
+    // Filtrar por tipo de dado se solicitado
+    if (tipo === 'chuva') {
+      where.OR = [
+        { Chuva_Acumulada: { not: null } },
+        { Chuva_Adotada: { not: null } }
+      ];
+    } else if (tipo === 'vazao') {
+      where.Vazao_Adotada = { not: null };
+    } else if (tipo === 'cota' || tipo === 'nivel') {
+      where.OR = [
+        { Cota_Sensor: { not: null } },
+        { Cota_Adotada: { not: null } },
+        { Cota_Display: { not: null } },
+        { Cota_Manual: { not: null } }
+      ];
+    } else if (tipo === 'temperatura') {
+      where.OR = [
+        { Temperatura_Agua: { not: null } },
+        { Temperatura_Interna: { not: null } }
+      ];
+    } else if (tipo !== 'all') {
+      return res.status(400).json({ error: 'Tipo inválido. Use: chuva, vazao, cota, temperatura ou all' });
+    }
+
+    const [data, total] = await Promise.all([
+      prisma.serieTelemetrica.findMany({ 
+        where, 
+        orderBy: { Data_Hora_Medicao: 'asc' }, 
+        skip: offset, 
+        take: limit 
+      }),
+      prisma.serieTelemetrica.count({ where }),
+    ]);
+
+    return res.json({
+      codigoEstacao,
+      tipo,
+      data,
+      pagination: {
+        offset,
+        limit,
+        total,
+      },
+    });
+  } catch (err: any) {
+    const status = err?.response?.status ?? 500;
+    const message = err?.message ?? 'Erro ao obter dados da série';
+    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+  }
+});
+
+// Função auxiliar para parsear data/hora
+function parseDataHora(val: any): Date | null {
+  if (!val) return null;
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
