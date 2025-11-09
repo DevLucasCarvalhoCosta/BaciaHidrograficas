@@ -10,18 +10,22 @@ import {
   TimeSeriesChart,
   HistoricalTrends,
   MonthlyHeatmap,
-  DataTable
+  DataTable,
+  MonthlyComparisonChart,
+  TrendInsights,
+  MethodologyExplainer
 } from './dashboard'
 
 interface StationDashboardProps {
   codigoEstacao: string
+  nomeEstacao?: string
   onClose: () => void
 }
 
-export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstacao, onClose }) => {
+export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstacao, nomeEstacao, onClose }) => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'overview' | 'series' | 'comparison' | 'alerts' | 'rawdata' | 'aggregated'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'series' | 'comparison' | 'alerts' | 'rawdata' | 'aggregated' | 'methodology'>('overview')
   
   // Estados para dados
   const [stats, setStats] = useState<any>(null)
@@ -38,8 +42,31 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
 
   // Carregar dados iniciais
   useEffect(() => {
+    // Limpar dados anteriores ao trocar de estação
+    setSerieChuva([])
+    setSerieTemp([])
+    setAgregadoDiario([])
+    setDadosBrutos([])
+    setDateRange(null)
+    setActiveTab('overview')
+    
     loadData()
   }, [codigoEstacao])
+
+  // Carregar séries temporais quando mudar para a aba "series"
+  useEffect(() => {
+    console.log('🔄 [useEffect-series] Mudança de aba detectada');
+    console.log('   Active Tab:', activeTab);
+    console.log('   Serie Chuva Length:', serieChuva.length);
+    console.log('   Serie Temp Length:', serieTemp.length);
+    
+    if (activeTab === 'series' && serieChuva.length === 0 && serieTemp.length === 0) {
+      console.log('   ▶️ Condições atendidas - Carregando séries temporais');
+      loadSeriesData(undefined, undefined)
+    } else {
+      console.log('   ⏸️ Condições não atendidas - Não vai carregar');
+    }
+  }, [activeTab])
 
   const loadData = async () => {
     setLoading(true)
@@ -66,7 +93,16 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
       
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err)
-      setError(err.message || 'Erro ao carregar dados')
+      const errorMessage = err.message || 'Erro ao carregar dados'
+      
+      // Se for erro 403 (estação não permitida ou sem dados), fechar o dashboard
+      if (errorMessage.includes('Estação não permitida') || errorMessage.includes('não encontrada')) {
+        alert(`⚠️ Esta estação não possui dados sincronizados.\n\nPara visualizar o dashboard, primeiro sincronize os dados na aba "Sincronização".`)
+        onClose() // Fechar o dashboard
+        return
+      }
+      
+      setError(errorMessage)
     } finally {
       setLoading(false)
     }
@@ -106,19 +142,51 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
   }
 
   const loadSeriesData = async (dataInicio?: string, dataFim?: string) => {
+    console.log('🔍 [loadSeriesData] Iniciando carregamento de séries temporais');
+    console.log('   Código Estação:', codigoEstacao);
+    console.log('   Data Início:', dataInicio);
+    console.log('   Data Fim:', dataFim);
+    
     try {
-      const params = { dataInicio, dataFim }
+      const params: any = {};
+      
+      // Sempre usar dados agregados por dia
+      if (dataInicio && dataInicio.trim() !== '') {
+        params.dataInicio = dataInicio;
+        console.log('   ✓ Filtro dataInicio:', dataInicio);
+      }
+      if (dataFim && dataFim.trim() !== '') {
+        params.dataFim = dataFim;
+        console.log('   ✓ Filtro dataFim:', dataFim);
+      }
+      
+      console.log('   � Buscando dados agregados por dia');
+      console.log('   📡 Params finais:', params);
+      
       const [chuvaRes, tempRes] = await Promise.all([
         api.get(`/api/dashboard/serie-chuva/${codigoEstacao}`, { params }),
         api.get(`/api/dashboard/serie-temperatura/${codigoEstacao}`, { params })
-      ])
+      ]);
       
-      setSerieChuva(chuvaRes.dados || [])
-      setSerieTemp(tempRes.dados || [])
+      console.log('   ✅ Resposta Chuva:', {
+        total: chuvaRes.total,
+        dadosLength: chuvaRes.dados?.length || 0,
+        primeiroRegistro: chuvaRes.dados?.[0]
+      });
+      console.log('   ✅ Resposta Temperatura:', {
+        total: tempRes.total,
+        dadosLength: tempRes.dados?.length || 0,
+        primeiroRegistro: tempRes.dados?.[0]
+      });
+      
+      setSerieChuva(chuvaRes.dados || []);
+      setSerieTemp(tempRes.dados || []);
+      
+      console.log('   ✓ Estados atualizados com sucesso');
     } catch (err) {
-      console.error('Erro ao carregar séries temporais:', err)
+      console.error('❌ [loadSeriesData] Erro ao carregar séries temporais:', err);
     }
-  }
+  };
 
   // Calcular insights
   const insights = useMemo(() => {
@@ -195,9 +263,9 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
       {/* Header */}
       <div className="dashboard-header">
         <div className="header-content">
-          <h1>📊 Dashboard - Estação {codigoEstacao}</h1>
+          <h1>📊 Dashboard - {nomeEstacao || `Estação ${codigoEstacao}`}</h1>
           <p className="subtitle">
-            Análise completa dos dados históricos • {insights.totalRegistros.toLocaleString()} registros
+            Código: <strong>{codigoEstacao}</strong> • {insights.totalRegistros.toLocaleString()} registros
           </p>
           <p className="period">
             Período: {(() => {
@@ -262,6 +330,12 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
           onClick={() => setActiveTab('aggregated')}
         >
           📊 Dados Agregados
+        </button>
+        <button 
+          className={activeTab === 'methodology' ? 'active' : ''}
+          onClick={() => setActiveTab('methodology')}
+        >
+          📚 Guia Metodológico
         </button>
       </div>
 
@@ -348,6 +422,11 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               <div className="charts-grid">
                 <div className="chart-card">
                   <h3>🌧️ Chuva Máxima Diária</h3>
+                  <p className="chart-description">
+                    Este gráfico mostra o <strong>pico de precipitação registrado em cada dia</strong> do mês selecionado. 
+                    Cada barra representa um dia do mês. Valores altos indicam eventos de chuva intensa que podem causar enchentes. 
+                    As linhas verticais tracejadas facilitam a identificação de cada dia.
+                  </p>
                   <BarChart
                     data={agregadoDiario}
                     xKey="dia"
@@ -355,9 +434,24 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                     color="#3b82f6"
                     unit="mm"
                   />
+                  <div className="chart-legend">
+                    <span className="legend-item">
+                      <span className="legend-bar" style={{ background: 'linear-gradient(180deg, #3b82f6 0%, rgba(59, 130, 246, 0.7) 100%)' }}></span>
+                      Cada barra = 1 dia
+                    </span>
+                    <span className="legend-item">
+                      <span className="legend-line" style={{ borderLeft: '2px dashed #f3f4f6' }}></span>
+                      Grade diária
+                    </span>
+                  </div>
                 </div>
                 <div className="chart-card">
                   <h3>🌡️ Temperatura Média Diária</h3>
+                  <p className="chart-description">
+                    Apresenta a <strong>temperatura média da água</strong> calculada a partir de todas as medições do dia. 
+                    Cada ponto na linha representa um dia do mês. Variações abruptas podem indicar mudanças climáticas ou entrada de afluentes. 
+                    A temperatura ideal varia entre 20-25°C para a maioria dos ecossistemas aquáticos.
+                  </p>
                   <LineChart
                     data={agregadoDiario}
                     xKey="dia"
@@ -365,6 +459,16 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                     color="#ef4444"
                     unit="°C"
                   />
+                  <div className="chart-legend">
+                    <span className="legend-item">
+                      <span className="legend-point" style={{ background: '#ef4444' }}></span>
+                      Cada ponto = 1 dia
+                    </span>
+                    <span className="legend-item">
+                      <span className="legend-line" style={{ borderLeft: '2px solid #ef4444', opacity: 0.8 }}></span>
+                      Tendência diária
+                    </span>
+                  </div>
                 </div>
               </div>
             ) : selectedMonth ? (
@@ -374,10 +478,20 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               </div>
             ) : null}
 
-            {/* Tendências mensais */}
+            {/* Tendências mensais - Gráfico Comparativo Profissional */}
             <div className="chart-card full-width">
-              <h3>📊 Tendências Mensais - Comparativo</h3>
+              <h3>📊 Tendências Mensais - Comparativo Integrado</h3>
+              <MonthlyComparisonChart data={comparacaoMensal} />
+            </div>
+
+            {/* Análise de Tendências Históricas Avançada */}
+            <div className="chart-card full-width">
               <HistoricalTrends data={comparacaoMensal} />
+            </div>
+
+            {/* Insights Inteligentes Profissionais */}
+            <div className="chart-card full-width">
+              <TrendInsights data={comparacaoMensal} />
             </div>
           </div>
         )}
@@ -385,16 +499,32 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
         {/* TAB: Séries Temporais */}
         {activeTab === 'series' && (
           <div className="series-tab">
+            {(() => {
+              console.log('🎨 [Render Series Tab] serieChuva.length:', serieChuva.length, 'serieTemp.length:', serieTemp.length);
+              return null;
+            })()}
+            
             <DateRangePicker
               onApply={(start: string, end: string) => {
+                console.log('📅 [DateRangePicker] Aplicar período:', { start, end });
                 setDateRange({ start, end })
                 loadSeriesData(start, end)
+              }}
+              onViewAll={() => {
+                console.log('📅 [DateRangePicker] Ver todos os dados');
+                setDateRange(null)
+                loadSeriesData(undefined, undefined)
               }}
             />
             
             {serieChuva.length > 0 && (
               <div className="chart-card">
                 <h3>🌧️ Série Temporal - Chuva Acumulada</h3>
+                <p className="chart-description">
+                  <strong>Visualização por dia</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
+                  Cada ponto representa o <strong>valor máximo de chuva</strong> registrado no dia. 
+                  As medições originais são feitas a cada 15 minutos pela estação telemétrica e agregadas diariamente para melhor visualização.
+                </p>
                 <TimeSeriesChart
                   data={serieChuva}
                   xKey="data"
@@ -403,7 +533,7 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                   unit="mm"
                 />
                 <div className="chart-insights">
-                  <p><strong>Total de medições:</strong> {serieChuva.length}</p>
+                  <p><strong>Total de dias:</strong> {serieChuva.length.toLocaleString()}</p>
                   <p><strong>Período:</strong> {dateRange ? (() => {
                     try {
                       const start = new Date(dateRange.start)
@@ -413,7 +543,7 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                     } catch {
                       return 'N/A'
                     }
-                  })() : 'Todos os dados'}</p>
+                  })() : 'Todo o histórico'}</p>
                 </div>
               </div>
             )}
@@ -421,6 +551,11 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
             {serieTemp.length > 0 && (
               <div className="chart-card">
                 <h3>🌡️ Série Temporal - Temperatura da Água</h3>
+                <p className="chart-description">
+                  <strong>Médias diárias de temperatura</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
+                  Cada ponto representa a <strong>temperatura média</strong> de água (linha vermelha) e interna (linha laranja) do dia. 
+                  As medições originais são feitas a cada 15 minutos e agregadas diariamente.
+                </p>
                 <TimeSeriesChart
                   data={serieTemp}
                   xKey="data"
@@ -432,16 +567,22 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                   legend={['Água', 'Interna']}
                 />
                 <div className="chart-insights">
-                  <p><strong>Total de medições:</strong> {serieTemp.length}</p>
+                  <p><strong>Total de dias:</strong> {serieTemp.length.toLocaleString()}</p>
                 </div>
               </div>
             )}
 
-            {serieChuva.length === 0 && serieTemp.length === 0 && (
-              <div className="empty-state">
-                <p>Selecione um período para visualizar as séries temporais</p>
-              </div>
-            )}
+            {serieChuva.length === 0 && serieTemp.length === 0 && (() => {
+              console.log('⚠️ [Empty State] Nenhum dado de série temporal disponível');
+              return (
+                <div className="empty-state">
+                  <p>⏳ Carregando séries temporais ou sem dados disponíveis...</p>
+                  <p style={{ fontSize: '14px', color: '#6b7280' }}>
+                    Aguarde enquanto carregamos os dados
+                  </p>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -450,11 +591,21 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
           <div className="comparison-tab">
             <div className="chart-card">
               <h3>📊 Comparação Mensal - Chuva vs Temperatura</h3>
+              <p className="chart-description">
+                Gráfico de <strong>duplo eixo</strong> que sobrepõe precipitação e temperatura mensais para análise correlacional. 
+                Permite identificar relações inversas típicas (mais chuva → temperatura menor) ou anomalias que indicam 
+                mudanças nos padrões climáticos locais. Essencial para estudos de impacto hidrológico.
+              </p>
               <MetricComparison data={comparacaoMensal} />
             </div>
 
             <div className="chart-card">
               <h3>🗓️ Mapa de Calor - Temperatura Média por Mês</h3>
+              <p className="chart-description">
+                <strong>Visualização matricial colorida</strong> que facilita a identificação rápida de períodos com temperaturas 
+                anormalmente altas (vermelho) ou baixas (azul). Cores mais intensas indicam desvios maiores da média histórica. 
+                Útil para detectar tendências sazonais e eventos climáticos extremos.
+              </p>
               <MonthlyHeatmap 
                 data={comparacaoMensal}
                 metric="temp_media"
@@ -464,6 +615,11 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
 
             <div className="comparison-table">
               <h3>📋 Tabela Comparativa Mensal</h3>
+              <p className="chart-description">
+                Dados consolidados mês a mês com <strong>valores numéricos precisos</strong> para análises detalhadas. 
+                Inclui volume de medições (completude dos dados), picos de chuva, médias térmicas e estado da bateria. 
+                Exportável para análises estatísticas externas e relatórios técnicos.
+              </p>
               <table>
                 <thead>
                   <tr>
@@ -815,6 +971,13 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               </ul>
               <p>Use os filtros nas colunas para buscar valores específicos e clique nos cabeçalhos para ordenar.</p>
             </div>
+          </div>
+        )}
+
+        {/* TAB: Guia Metodológico */}
+        {activeTab === 'methodology' && (
+          <div className="methodology-tab">
+            <MethodologyExplainer />
           </div>
         )}
       </div>

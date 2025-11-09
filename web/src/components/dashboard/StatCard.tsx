@@ -8,6 +8,7 @@ interface StatCardProps {
   subtitle: string
   trend: number // percentual de mudança
   color: string
+  insightText?: string // Texto de insight contextual
 }
 
 export const StatCard: React.FC<StatCardProps> = ({ 
@@ -17,8 +18,10 @@ export const StatCard: React.FC<StatCardProps> = ({
   unit, 
   subtitle, 
   trend, 
-  color 
+  color,
+  insightText
 }) => {
+
   const getTrendIcon = () => {
     if (trend > 0) return '📈'
     if (trend < 0) return '📉'
@@ -47,6 +50,12 @@ export const StatCard: React.FC<StatCardProps> = ({
           <span>{getTrendIcon()}</span>
           <span>{Math.abs(trend).toFixed(1)}%</span>
           <span className="trend-label">vs. mês anterior</span>
+        </div>
+      )}
+      {insightText && (
+        <div className="stat-insight">
+          <div className="insight-icon">💡</div>
+          <div className="insight-text">{insightText}</div>
         </div>
       )}
     </div>

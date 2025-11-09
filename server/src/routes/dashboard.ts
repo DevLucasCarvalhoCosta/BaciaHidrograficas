@@ -23,10 +23,6 @@ function convertBigInt(obj: any): any {
 router.get('/stats/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
     const [total, periodo, stats] = await Promise.all([
       // Total de registros
@@ -73,96 +69,130 @@ router.get('/stats/:codigoEstacao', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint: Série temporal de chuva
+// Endpoint: Série temporal de chuva (sempre agregado por dia)
 router.get('/serie-chuva/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
     const { dataInicio, dataFim } = req.query;
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
-    const whereClause: any = { codigoestacao: codigoEstacao };
-    
-    if (dataInicio) {
-      whereClause.Data_Hora_Medicao = { gte: new Date(dataInicio as string) };
-    }
-    if (dataFim) {
-      whereClause.Data_Hora_Medicao = { 
-        ...whereClause.Data_Hora_Medicao,
-        lte: new Date(dataFim as string) 
-      };
-    }
-
-    const dados = await prisma.serieTelemetrica.findMany({
-      where: whereClause,
-      select: {
-        Data_Hora_Medicao: true,
-        Chuva_Acumulada: true,
-        Chuva_Adotada: true,
-        Chuva_Acumulada_Status: true
-      },
-      orderBy: { Data_Hora_Medicao: 'asc' }
+    console.log('🔍 [API serie-chuva] Request recebido:', {
+      codigoEstacao,
+      dataInicio,
+      dataFim
     });
+
+    console.log('   📊 Retornando dados AGREGADOS por dia');
+    
+    let sqlQuery = `
+      SELECT 
+        DATE("Data_Hora_Medicao") as data,
+        MAX(CAST("Chuva_Acumulada" AS DECIMAL)) as acumulada,
+        MAX(CAST("Chuva_Adotada" AS DECIMAL)) as adotada,
+        COUNT(*) as medicoes_dia
+      FROM "SerieTelemetrica"
+      WHERE codigoestacao = '${codigoEstacao}'
+    `;
+    
+    if (dataInicio && dataInicio !== '' && typeof dataInicio === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" >= '${dataInicio}'`;
+      console.log('   ✓ Filtro data início:', dataInicio);
+    }
+    if (dataFim && dataFim !== '' && typeof dataFim === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" <= '${dataFim}'`;
+      console.log('   ✓ Filtro data fim:', dataFim);
+    }
+    
+    sqlQuery += `
+      GROUP BY DATE("Data_Hora_Medicao")
+      ORDER BY data ASC
+    `;
+    
+    const dados = await prisma.$queryRawUnsafe(sqlQuery) as any[];
+
+    console.log('   ✅ Dados agregados:', dados.length, 'dias');
+    if (dados.length > 0) {
+      console.log('   📊 Primeiro dia:', dados[0]);
+      console.log('   📊 Último dia:', dados[dados.length - 1]);
+    }
 
     res.json(convertBigInt({
       codigoEstacao,
       total: dados.length,
       dados: dados.map(d => ({
-        data: d.Data_Hora_Medicao,
-        acumulada: d.Chuva_Acumulada,
-        adotada: d.Chuva_Adotada,
-        status: d.Chuva_Acumulada_Status
+        data: d.data,
+        acumulada: d.acumulada,
+        adotada: d.adotada,
+        medicoes_dia: d.medicoes_dia
       }))
     }));
   } catch (error: any) {
+    console.error('❌ [API serie-chuva] Erro:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
 
-// Endpoint: Série temporal de temperatura
+// Endpoint: Série temporal de temperatura (sempre agregado por dia)
 router.get('/serie-temperatura/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
     const { dataInicio, dataFim } = req.query;
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
-    const whereClause: any = { codigoestacao: codigoEstacao };
-    
-    if (dataInicio) {
-      whereClause.Data_Hora_Medicao = { gte: new Date(dataInicio as string) };
-    }
-    if (dataFim) {
-      whereClause.Data_Hora_Medicao = { 
-        ...whereClause.Data_Hora_Medicao,
-        lte: new Date(dataFim as string) 
-      };
-    }
-
-    const dados = await prisma.serieTelemetrica.findMany({
-      where: whereClause,
-      select: {
-        Data_Hora_Medicao: true,
-        Temperatura_Agua: true,
-        Temperatura_Interna: true
-      },
-      orderBy: { Data_Hora_Medicao: 'asc' }
+    console.log('🔍 [API serie-temperatura] Request recebido:', {
+      codigoEstacao,
+      dataInicio,
+      dataFim
     });
+
+    console.log('   📊 Retornando dados AGREGADOS por dia');
+    
+    let sqlQuery = `
+      SELECT 
+        DATE("Data_Hora_Medicao") as data,
+        AVG(CAST("Temperatura_Agua" AS DECIMAL)) as agua,
+        AVG(CAST("Temperatura_Interna" AS DECIMAL)) as interna,
+        MIN(CAST("Temperatura_Agua" AS DECIMAL)) as agua_min,
+        MAX(CAST("Temperatura_Agua" AS DECIMAL)) as agua_max,
+        COUNT(*) as medicoes_dia
+      FROM "SerieTelemetrica"
+      WHERE codigoestacao = '${codigoEstacao}'
+    `;
+    
+    if (dataInicio && dataInicio !== '' && typeof dataInicio === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" >= '${dataInicio}'`;
+      console.log('   ✓ Filtro data início:', dataInicio);
+    }
+    if (dataFim && dataFim !== '' && typeof dataFim === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" <= '${dataFim}'`;
+      console.log('   ✓ Filtro data fim:', dataFim);
+    }
+    
+    sqlQuery += `
+      GROUP BY DATE("Data_Hora_Medicao")
+      ORDER BY data ASC
+    `;
+    
+    const dados = await prisma.$queryRawUnsafe(sqlQuery) as any[];
+
+    console.log('   ✅ Dados agregados:', dados.length, 'dias');
+    if (dados.length > 0) {
+      console.log('   📊 Primeiro dia:', dados[0]);
+      console.log('   📊 Último dia:', dados[dados.length - 1]);
+    }
 
     res.json(convertBigInt({
       codigoEstacao,
       total: dados.length,
       dados: dados.map(d => ({
-        data: d.Data_Hora_Medicao,
-        agua: d.Temperatura_Agua,
-        interna: d.Temperatura_Interna
+        data: d.data,
+        agua: d.agua,
+        interna: d.interna,
+        agua_min: d.agua_min,
+        agua_max: d.agua_max,
+        medicoes_dia: d.medicoes_dia
       }))
     }));
   } catch (error: any) {
+    console.error('❌ [API serie-temperatura] Erro:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -172,10 +202,6 @@ router.get('/agregado-diario/:codigoEstacao', async (req: Request, res: Response
   try {
     const { codigoEstacao } = req.params;
     const { mes } = req.query; // formato: 2025-01
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
     let dados;
     
@@ -232,10 +258,6 @@ router.get('/agregado-diario/:codigoEstacao', async (req: Request, res: Response
 router.get('/comparacao-mensal/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
     const dados = await prisma.$queryRaw`
       SELECT 
@@ -265,10 +287,6 @@ router.get('/comparacao-mensal/:codigoEstacao', async (req: Request, res: Respon
 router.get('/alertas/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
     const [tempAlta, tempBaixa, bateriaBaixa] = await Promise.all([
       // Temperatura alta (> 30°C)
@@ -326,10 +344,6 @@ router.get('/dados-brutos/:codigoEstacao', async (req: Request, res: Response) =
   try {
     const { codigoEstacao } = req.params;
     const { mes } = req.query; // Formato: YYYY-MM
-    
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({ error: 'Estação não permitida' });
-    }
 
     if (!mes || typeof mes !== 'string') {
       return res.status(400).json({ error: 'Parâmetro "mes" é obrigatório (formato: YYYY-MM)' });

@@ -142,3 +142,26 @@ model SerieTelemetrica {
   @@unique([codigoestacao, Data_Hora_Medicao])
   @@index([codigoestacao, Data_Hora_Medicao])
 }
+
+// Log de Sincronizações
+model SyncLog {
+  id                   String   @id @default(cuid())
+  codigoEstacao        String
+  dataInicio           String   // Data de início do período sincronizado (yyyy-MM-dd)
+  dataFim              String   // Data de fim do período sincronizado (yyyy-MM-dd)
+  inicioExecucao       DateTime
+  fimExecucao          DateTime?
+  duracaoMs            Int?     // Duração em milissegundos
+  totalRequisicoes     Int      @default(0)
+  registrosProcessados Int      @default(0)
+  erros                Int      @default(0)
+  sucesso              Boolean  @default(false)
+  detalhes             String?  @db.Text // JSON com detalhes da execução
+  tipoSync             String?  // 'manual', 'automatico', 'rapido'
+  
+  criadaEm             DateTime @default(now())
+  
+  @@index([codigoEstacao, inicioExecucao])
+  @@index([sucesso, inicioExecucao])
+}
+

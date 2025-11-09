@@ -4,6 +4,7 @@ import cors from 'cors';
 
 import { router as anaRouter } from './routes/ana';
 import dashboardRouter from './routes/dashboard';
+import { iniciarScheduler } from './services/scheduler';
 
 const app = express();
 
@@ -27,4 +28,7 @@ app.use('/api/dashboard', dashboardRouter);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
+  
+  // Iniciar scheduler de sincronização automática
+  iniciarScheduler();
 });

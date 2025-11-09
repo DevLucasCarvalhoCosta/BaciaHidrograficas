@@ -2,6 +2,12 @@ import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { AnaClient } from '../services/anaClient';
 import { prisma } from '../db/prisma';
+import { 
+  executarSincronizacao, 
+  sincronizarUltimosDias, 
+  getSyncStatus,
+  type SyncOptions 
+} from '../services/syncService';
 
 export const router = Router();
 
@@ -592,9 +598,7 @@ const SerieTelemetricaSchema = z.object({
   token: z.string().optional(),
   identificador: z.string().optional(),
   senha: z.string().optional(),
-  codigoEstacao: z.string().refine(val => val === '75650010', {
-    message: 'Somente a estação 75650010 está disponível no momento',
-  }),
+  codigoEstacao: z.string().min(1, 'Código da estação é obrigatório'),
   // Novos parâmetros conforme interface da ANA
   tipoFiltroData: z.string().optional(), // ex: DATA_LEITURA (padrão)
   dataBusca: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato yyyy-MM-dd'), // ex: 2025-10-01
@@ -623,14 +627,6 @@ router.get('/series/test/:codigoEstacao', async (req: Request, res: Response) =>
     
     if (!codigoEstacao) {
       return res.status(400).json({ error: 'Código da estação é obrigatório' });
-    }
-    
-    // Validar estação permitida
-    if (codigoEstacao !== '75650010') {
-      return res.status(403).json({
-        error: 'Acesso negado',
-        message: 'Somente a estação 75650010 está disponível no momento'
-      });
     }
     
     // Validar dataBusca obrigatória
@@ -826,6 +822,55 @@ router.post('/series/sync', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/ana/series/estacoes/lista
+ * Retorna lista de todas as estações que possuem dados sincronizados
+ */
+router.get('/series/estacoes/lista', async (_req: Request, res: Response) => {
+  try {
+    // Buscar estações únicas com dados
+    const estacoes = await prisma.serieTelemetrica.groupBy({
+      by: ['codigoestacao'],
+      _count: {
+        codigoestacao: true
+      },
+      _min: {
+        Data_Hora_Medicao: true
+      },
+      _max: {
+        Data_Hora_Medicao: true
+      }
+    });
+
+    // Buscar informações das estações do banco
+    const estacoesComInfo = await Promise.all(
+      estacoes.map(async (est) => {
+        const station = await prisma.hidroStation.findUnique({
+          where: { codigoestacao: est.codigoestacao }
+        });
+
+        return {
+          codigoEstacao: est.codigoestacao,
+          nome: station?.Estacao_Nome || 'Nome não disponível',
+          latitude: station?.Latitude ? parseFloat(station.Latitude) : null,
+          longitude: station?.Longitude ? parseFloat(station.Longitude) : null,
+          totalRegistros: est._count.codigoestacao,
+          periodoInicio: est._min.Data_Hora_Medicao,
+          periodoFim: est._max.Data_Hora_Medicao
+        };
+      })
+    );
+
+    // Ordenar por nome
+    estacoesComInfo.sort((a, b) => a.nome.localeCompare(b.nome));
+
+    return res.json(estacoesComInfo);
+  } catch (err: any) {
+    const message = err?.message ?? 'Erro ao buscar lista de estações';
+    return res.status(500).json({ error: message });
+  }
+});
+
+/**
  * GET /api/ana/series/:codigoEstacao
  * Retorna estatísticas das séries armazenadas para uma estação
  */
@@ -986,3 +1031,91 @@ function parseDataHora(val: any): Date | null {
     return null;
   }
 }
+
+// ============================================
+// SINCRONIZAÇÃO - Novos endpoints para gerenciar sync
+// ============================================
+
+/**
+ * POST /api/ana/sync/manual
+ * Dispara uma sincronização manual de dados
+ * Body: { codigoEstacao, dataInicio, dataFim, intervaloDias? }
+ */
+router.post('/sync/manual', async (req: Request, res: Response) => {
+  try {
+    const schema = z.object({
+      codigoEstacao: z.string().min(1, 'Código da estação é obrigatório'),
+      dataInicio: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato yyyy-MM-dd'),
+      dataFim: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data deve estar no formato yyyy-MM-dd'),
+      intervaloDias: z.number().min(1).max(90).optional(),
+    });
+
+    const options = schema.parse(req.body) as SyncOptions;
+
+    // Validar que dataInicio < dataFim
+    if (new Date(options.dataInicio) > new Date(options.dataFim)) {
+      return res.status(400).json({ error: 'dataInicio deve ser anterior a dataFim' });
+    }
+
+    // Executar sincronização e aguardar resultado
+    const result = await executarSincronizacao(options);
+    
+    console.log('[Sync] Concluída:', result);
+    
+    // Retornar resultado completo com detalhes
+    return res.json(result);
+
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Dados inválidos', details: err.errors });
+    }
+    const message = err?.message ?? 'Erro ao iniciar sincronização';
+    return res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * POST /api/ana/sync/ultimos-dias
+ * Sincroniza os últimos N dias
+ * Body: { codigoEstacao, dias? }
+ */
+router.post('/sync/ultimos-dias', async (req: Request, res: Response) => {
+  try {
+    const schema = z.object({
+      codigoEstacao: z.string().min(1, 'Código da estação é obrigatório'),
+      dias: z.number().min(1).max(30).optional().default(7),
+    });
+
+    const { codigoEstacao, dias } = schema.parse(req.body);
+
+    // Executar sincronização e aguardar resultado
+    const result = await sincronizarUltimosDias(codigoEstacao, dias);
+    
+    console.log('[Sync Últimos Dias] Concluída:', result);
+    
+    // Retornar resultado completo com detalhes
+    return res.json(result);
+
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Dados inválidos', details: err.errors });
+    }
+    const message = err?.message ?? 'Erro ao iniciar sincronização';
+    return res.status(500).json({ error: message });
+  }
+});
+
+/**
+ * GET /api/ana/sync/status
+ * Retorna o status atual da sincronização
+ */
+router.get('/sync/status', async (_req: Request, res: Response) => {
+  try {
+    const status = getSyncStatus();
+    return res.json(status);
+  } catch (err: any) {
+    const message = err?.message ?? 'Erro ao obter status da sincronização';
+    return res.status(500).json({ error: message });
+  }
+});
+

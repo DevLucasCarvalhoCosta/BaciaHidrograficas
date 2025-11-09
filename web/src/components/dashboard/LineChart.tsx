@@ -15,73 +15,77 @@ export const LineChart: React.FC<LineChartProps> = ({
   yKey, 
   color, 
   unit,
-  height = 300 
+  height = 350 
 }) => {
-  const { points, min, max, labels } = useMemo(() => {
-    if (!data.length) return { points: '', min: 0, max: 0, labels: [] }
+  const { points, areaPoints, min, max, yAxisLabels, xAxisLabels } = useMemo(() => {
+    if (!data.length) return { points: '', areaPoints: '', min: 0, max: 0, yAxisLabels: [], xAxisLabels: [] }
     
     const values = data.map(d => parseFloat(d[yKey]) || 0).filter(v => v > 0)
     
-    if (values.length === 0) return { points: '', min: 0, max: 0, labels: [] }
+    if (values.length === 0) return { points: '', areaPoints: '', min: 0, max: 0, yAxisLabels: [], xAxisLabels: [] }
     
     const min = Math.min(...values)
     const max = Math.max(...values)
-    const range = max - min || 1
+    
+    // Arredondar para valores "bonitos"
+    const niceMin = Math.floor(min * 0.95)
+    const niceMax = Math.ceil(max * 1.05)
+    const range = niceMax - niceMin || 1
     
     const width = 100
     const chartHeight = 100
     const stepX = width / (data.length - 1 || 1)
     
-    const points = data.map((d, i) => {
+    const pointsArray = data.map((d, i) => {
       const value = parseFloat(d[yKey]) || 0
       const x = i * stepX
       const y = value > 0 
-        ? chartHeight - ((value - min) / range) * chartHeight
-        : chartHeight // Coloca no fundo se for 0
-      return `${x},${y}`
-    }).join(' ')
+        ? chartHeight - ((value - niceMin) / range) * chartHeight
+        : chartHeight
+      return { x, y, value }
+    })
     
-    // Gerar labels do eixo X (mostrar apenas alguns)
+    const points = pointsArray.map(p => `${p.x},${p.y}`).join(' ')
+    
+    // Criar pontos para área preenchida
+    const areaPoints = `0,${chartHeight} ${points} ${width},${chartHeight}`
+    
+    // Labels do eixo Y (5 níveis)
+    const yAxisLabels = [
+      { value: niceMax, label: niceMax.toFixed(1) },
+      { value: niceMin + range * 0.75, label: (niceMin + range * 0.75).toFixed(1) },
+      { value: niceMin + range * 0.5, label: (niceMin + range * 0.5).toFixed(1) },
+      { value: niceMin + range * 0.25, label: (niceMin + range * 0.25).toFixed(1) },
+      { value: niceMin, label: niceMin.toFixed(1) }
+    ]
+    
+    // Labels do eixo X - mostrar TODOS os dias
     const totalDays = data.length
-    const maxLabels = 6 // Máximo de labels a mostrar
-    const step = Math.max(1, Math.ceil(totalDays / maxLabels))
     
-    const labels = data
-      .map((d, i) => ({ d, i }))
-      .filter(({ i }) => i % step === 0 || i === totalDays - 1)
-      .map(({ d }) => {
-        const dateValue = d[xKey]
-        let text = 'N/A'
-        
-        try {
-          if (typeof dateValue === 'string') {
-            // Se tem hífen, é uma data YYYY-MM-DD, pega só o dia
-            if (dateValue.includes('-')) {
-              const parts = dateValue.split('-')
-              const day = parts[2] ? parseInt(parts[2], 10) : null
-              text = day ? String(day) : 'N/A'
-            } else {
-              // Tenta parsear como número
-              const num = parseInt(dateValue, 10)
-              text = !isNaN(num) ? String(num) : 'N/A'
-            }
-          } else if (typeof dateValue === 'number') {
-            text = String(dateValue)
-          } else {
-            // Tenta parsear como Date
-            const date = new Date(dateValue)
-            if (!isNaN(date.getTime())) {
-              text = String(date.getDate())
-            }
-          }
-        } catch {
-          text = 'N/A'
+    const xAxisLabels = data.map((d, i) => {
+      const dateValue = d[xKey]
+      let text = ''
+      
+      // Extrair o número do dia
+      let dayNumber = 0
+      try {
+        if (typeof dateValue === 'string' && dateValue.includes('-')) {
+          const parts = dateValue.split('-')
+          dayNumber = parts[2] ? parseInt(parts[2], 10) : 0
+        } else if (typeof dateValue === 'number') {
+          dayNumber = dateValue
         }
-        
-        return text
-      })
+      } catch {
+        dayNumber = 0
+      }
+      
+      text = dayNumber > 0 ? String(dayNumber) : ''
+      
+      // Mostrar TODOS os dias
+      return { text, index: i, show: true }
+    })
     
-    return { points, min, max, labels }
+    return { points, areaPoints, min: niceMin, max: niceMax, yAxisLabels, xAxisLabels }
   }, [data, xKey, yKey])
 
   if (!data.length) {
@@ -93,60 +97,123 @@ export const LineChart: React.FC<LineChartProps> = ({
   }
 
   return (
-    <div className="line-chart" style={{ height: `${height}px`, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: '1 1 auto', minHeight: 0, marginBottom: '10px' }}>
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ display: 'block', width: '100%', height: '100%' }}>
-          {/* Grid lines */}
-          <line x1="0" y1="25" x2="100" y2="25" stroke="#e5e7eb" strokeWidth="0.2" opacity="0.5" />
-          <line x1="0" y1="50" x2="100" y2="50" stroke="#e5e7eb" strokeWidth="0.2" opacity="0.5" />
-          <line x1="0" y1="75" x2="100" y2="75" stroke="#e5e7eb" strokeWidth="0.2" opacity="0.5" />
+    <div className="line-chart-container">
+      {/* Eixo Y */}
+      <div className="y-axis">
+        <div className="y-axis-unit">{unit}</div>
+        {yAxisLabels.map((label, i) => (
+          <div key={i} className="y-axis-label">
+            <span>{label.label}</span>
+          </div>
+        ))}
+      </div>
+      
+      {/* Área do gráfico */}
+      <div className="line-chart-wrapper">
+        <svg 
+          viewBox="0 0 100 100" 
+          preserveAspectRatio="none"
+          style={{ width: '100%', height: `${height}px`, display: 'block' }}
+        >
+          {/* Grid lines horizontais */}
+          {[0, 25, 50, 75, 100].map(y => (
+            <line 
+              key={y}
+              x1="0" 
+              y1={y} 
+              x2="100" 
+              y2={y} 
+              stroke="#e5e7eb" 
+              strokeWidth="0.2"
+            />
+          ))}
           
-          {/* Area fill with gradient */}
+          {/* Grid lines verticais para cada dia */}
+          {data.map((_, i) => {
+            const x = (i / (data.length - 1)) * 100
+            return (
+              <line 
+                key={`grid-${i}`}
+                x1={x} 
+                y1="0" 
+                x2={x} 
+                y2="100" 
+                stroke="#f3f4f6" 
+                strokeWidth="0.1"
+                opacity="0.5"
+              />
+            )
+          })}
+          
+          {/* Gradiente da área */}
           <defs>
             <linearGradient id={`gradient-line-${color.replace('#', '')}`} x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" stopColor={color} stopOpacity="0.4" />
+              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
               <stop offset="100%" stopColor={color} stopOpacity="0.05" />
             </linearGradient>
           </defs>
-          <polyline
+          
+          {/* Área preenchida */}
+          <polygon
             fill={`url(#gradient-line-${color.replace('#', '')})`}
             stroke="none"
-            points={`0,100 ${points} 100,100`}
+            points={areaPoints}
           />
           
-          {/* Line */}
+          {/* Linha */}
           <polyline
             fill="none"
             stroke={color}
-            strokeWidth="1.2"
+            strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
             points={points}
           />
+          
+          {/* Pontos de dados visíveis */}
+          {data.map((d, i) => {
+            const value = parseFloat(d[yKey]) || 0
+            if (value <= 0) return null
+            
+            const x = (i / (data.length - 1)) * 100
+            const y = 100 - ((value - min) / (max - min)) * 100
+            
+            return (
+              <circle
+                key={`point-${i}`}
+                cx={x}
+                cy={y}
+                r="0.8"
+                fill={color}
+                opacity="0.7"
+              >
+                <title>{value.toFixed(2)} {unit}</title>
+              </circle>
+            )
+          })}
         </svg>
-      </div>
-      <div className="chart-axis" style={{ flexShrink: 0 }}>
-        <span className="axis-label" style={{ fontWeight: 700, color: '#374151' }}>{min.toFixed(1)} {unit}</span>
-        <span className="axis-label" style={{ fontWeight: 700, color: '#374151' }}>{max.toFixed(1)} {unit}</span>
-      </div>
-      <div className="chart-labels" style={{ position: 'relative', height: '30px', marginTop: '8px' }}>
-        {labels.map((label, i) => (
-          <span 
-            key={i} 
-            className="label"
-            style={{ 
-              position: 'absolute',
-              left: `${(i / data.length) * 100}%`,
-              transform: 'translateX(-50%)',
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#6b7280',
-              whiteSpace: 'nowrap'
-            }}
-          >
-            {label}
-          </span>
-        ))}
+        
+        {/* Eixo X */}
+        <div className="x-axis">
+          {xAxisLabels.filter(l => l.show).map((label, i) => {
+            // Para gráfico de linha, usar posição exata do ponto
+            const pointPosition = data.length > 1 
+              ? (label.index / (data.length - 1)) * 100 
+              : 50
+            
+            return (
+              <span 
+                key={i}
+                className="x-axis-label"
+                style={{ 
+                  left: `${pointPosition}%`,
+                }}
+              >
+                {label.text}
+              </span>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

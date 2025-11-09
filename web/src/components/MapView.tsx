@@ -85,19 +85,26 @@ function Recenter({ center }: { center: [number, number] }) {
   return null
 }
 
-export function MapView() {
+interface MapViewProps {
+  onGoToSync: (codigoEstacao: string) => void;
+  selectedStationCode?: string;
+}
+
+export function MapView({ onGoToSync, selectedStationCode }: MapViewProps) {
   const [stations, setStations] = useState<HidroStation[]>([])
+  const [estacoesComDados, setEstacoesComDados] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [syncingStation, setSyncingStation] = useState<string | null>(null)
   const [dashboardStation, setDashboardStation] = useState<string | null>(null)
-  // Default to Goiás (GO) instead of RS
-  const [uf, setUf] = useState('GO')
+  const [dashboardStationName, setDashboardStationName] = useState<string>('')
+  // Default to Rio Grande do Sul (RS)
+  const [uf, setUf] = useState('RS')
   const [qInput, setQInput] = useState('')
   const [q, setQ] = useState('')
   const [tipo, setTipo] = useState('')
   const [operando, setOperando] = useState<'Todos' | 'Sim' | 'Não'>('Todos')
   const [rio, setRio] = useState('')
+  const [apenasComDados, setApenasComDados] = useState(false)
   const [rules, setRules] = useState<FilterRule[]>([])
   // Date range filters (from/to)
   const [pluvIniFrom, setPluvIniFrom] = useState('')
@@ -146,6 +153,31 @@ export function MapView() {
     return () => { cancelled = true }
   }, [uf, q])
 
+  // Carregar lista de estações com dados sincronizados
+  useEffect(() => {
+    async function loadEstacoesComDados() {
+      try {
+        const res = await api.get('/api/ana/series/estacoes/lista')
+        setEstacoesComDados(res.map((e: any) => e.codigoEstacao))
+      } catch (e) {
+        console.error('Erro ao carregar estações com dados:', e)
+      }
+    }
+    loadEstacoesComDados()
+  }, [])
+
+  // Abrir dashboard automaticamente quando uma estação é selecionada
+  useEffect(() => {
+    if (selectedStationCode) {
+      setDashboardStation(selectedStationCode)
+      // Buscar o nome da estação selecionada
+      const station = stations.find(s => s.codigoestacao === selectedStationCode)
+      if (station) {
+        setDashboardStationName(station.Estacao_Nome || 'Estação sem nome')
+      }
+    }
+  }, [selectedStationCode, stations])
+
   // Centro e zoom baseado no estado selecionado
   const center = useMemo<[number, number]>(() => {
     const centers: Record<string, [number, number]> = {
@@ -186,63 +218,6 @@ export function MapView() {
   const activeIcon = useMemo(() => createStationMarkerIcon(true), [])
   const inactiveIcon = useMemo(() => createStationMarkerIcon(false), [])
 
-  // Função para buscar dados detalhados de uma estação
-  const handleSyncSeriesData = async (codigoEstacao: string) => {
-    if (syncingStation) {
-      alert('Aguarde a sincronização anterior terminar.')
-      return
-    }
-
-    const confirm = window.confirm(
-      `Deseja buscar os dados detalhados da estação ${codigoEstacao}?\n\n` +
-      `Isso irá:\n` +
-      `• Buscar séries de chuva, vazão e nível dos últimos 12 meses\n` +
-      `• Armazenar no banco de dados para análises futuras\n` +
-      `• Pode levar alguns segundos`
-    )
-
-    if (!confirm) return
-
-    setSyncingStation(codigoEstacao)
-    
-    try {
-      // Calcular datas (últimos 12 meses)
-      const dataFim = new Date().toISOString().split('T')[0]
-      const dataInicio = new Date()
-      dataInicio.setMonth(dataInicio.getMonth() - 12)
-      const dataInicioStr = dataInicio.toISOString().split('T')[0]
-
-      const response = await api.post('/api/ana/series/sync', {
-        codigoEstacao,
-        dataInicio: dataInicioStr,
-        dataFim: dataFim,
-        // tipo: undefined = busca todos (chuva, vazao, nivel)
-      })
-
-      const result = response.data
-      let message = `✅ Dados sincronizados com sucesso!\n\n`
-      
-      if (result.chuva) {
-        message += `💧 Chuva: ${result.chuva.upserted || result.chuva.total || 0} registros\n`
-      }
-      if (result.vazao) {
-        message += `🌊 Vazão: ${result.vazao.upserted || result.vazao.total || 0} registros\n`
-      }
-      if (result.nivel) {
-        message += `📏 Nível: ${result.nivel.upserted || result.nivel.total || 0} registros\n`
-      }
-
-      message += `\n📊 Agora você pode visualizar esses dados em dashboards!`
-      
-      alert(message)
-    } catch (error: any) {
-      console.error('Erro ao sincronizar dados:', error)
-      alert(`❌ Erro ao buscar dados:\n\n${error?.response?.data?.error || error?.message || 'Erro desconhecido'}`)
-    } finally {
-      setSyncingStation(null)
-    }
-  }
-
   function dateSerial(val: any): number | null {
     if (val === null || val === undefined) return null
     const s = String(val).trim()
@@ -282,6 +257,11 @@ export function MapView() {
     }
 
     const base = stations.filter((s) => {
+      // Filtro para mostrar apenas estações com dados
+      if (apenasComDados && !estacoesComDados.includes(s.codigoestacao)) {
+        return false
+      }
+      
       if (tipo && (s.Tipo_Estacao || '').trim() !== tipo) return false
       if (operando !== 'Todos') {
         const isOperating = typeof s.Operando === 'boolean' ? s.Operando : toBoolean(s.Operando)
@@ -381,7 +361,7 @@ export function MapView() {
     const passesAll = (s: any) => (rules || []).every(r => applyRule(s, r))
     return base.filter(passesAll)
   }, [
-    stations, tipo, operando, rio, rules,
+    stations, tipo, operando, rio, rules, apenasComDados, estacoesComDados,
     pluvIniFrom, pluvIniTo, pluvFimFrom, pluvFimTo,
     regChuvaIniFrom, regChuvaIniTo, regChuvaFimFrom, regChuvaFimTo,
     regNivelIniFrom, regNivelIniTo, regNivelFimFrom, regNivelFimTo,
@@ -425,8 +405,12 @@ export function MapView() {
     <>
       {dashboardStation && (
         <StationDashboard 
-          codigoEstacao={dashboardStation} 
-          onClose={() => setDashboardStation(null)} 
+          codigoEstacao={dashboardStation}
+          nomeEstacao={dashboardStationName}
+          onClose={() => {
+            setDashboardStation(null);
+            setDashboardStationName('');
+          }} 
         />
       )}
       <div className="map-root">
@@ -520,6 +504,15 @@ export function MapView() {
           <label>
             Rio:
             <input value={rio} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRio(e.target.value)} placeholder="nome do rio..." />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input 
+              type="checkbox" 
+              checked={apenasComDados} 
+              onChange={(e) => setApenasComDados(e.target.checked)}
+              style={{ width: 'auto' }}
+            />
+            📊 Apenas estações com dados
           </label>
         </div>
         <div className="divider" />
@@ -623,7 +616,10 @@ export function MapView() {
                   </div>
                   <div style={{ marginTop: '12px', paddingTop: '8px', borderTop: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <button
-                      onClick={() => setDashboardStation(s.codigoestacao)}
+                      onClick={() => {
+                        setDashboardStation(s.codigoestacao);
+                        setDashboardStationName(s.Estacao_Nome || 'Estação sem nome');
+                      }}
                       style={{
                         width: '100%',
                         padding: '8px 12px',
@@ -642,32 +638,23 @@ export function MapView() {
                       📊 Ver Dashboard Completo
                     </button>
                     <button
-                      onClick={() => handleSyncSeriesData(s.codigoestacao)}
-                      disabled={syncingStation === s.codigoestacao}
+                      onClick={() => onGoToSync(s.codigoestacao)}
                       style={{
                         width: '100%',
                         padding: '8px 12px',
-                        background: syncingStation === s.codigoestacao ? '#9ca3af' : '#0284c7',
+                        background: '#8b5cf6',
                         color: 'white',
                         border: 'none',
                         borderRadius: '6px',
-                        cursor: syncingStation === s.codigoestacao ? 'not-allowed' : 'pointer',
+                        cursor: 'pointer',
                         fontSize: '0.875rem',
                         fontWeight: 600,
                         transition: 'all 0.2s',
                       }}
-                      onMouseOver={(e) => {
-                        if (syncingStation !== s.codigoestacao) {
-                          e.currentTarget.style.background = '#0369a1'
-                        }
-                      }}
-                      onMouseOut={(e) => {
-                        if (syncingStation !== s.codigoestacao) {
-                          e.currentTarget.style.background = '#0284c7'
-                        }
-                      }}
+                      onMouseOver={(e) => e.currentTarget.style.background = '#7c3aed'}
+                      onMouseOut={(e) => e.currentTarget.style.background = '#8b5cf6'}
                     >
-                      {syncingStation === s.codigoestacao ? '⏳ Sincronizando...' : '� Buscar Dados da ANA'}
+                      🔄 Sincronizar Dados
                     </button>
                   </div>
                 </div>

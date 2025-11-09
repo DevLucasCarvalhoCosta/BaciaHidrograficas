@@ -5,7 +5,11 @@ export const API_BASE_URL = (import.meta as any).env?.DEV
 export const api = {
   async get(url: string, options?: { params?: Record<string, any> }) {
     const qs = options?.params
-      ? '?' + new URLSearchParams(Object.entries(options.params).filter(([, v]) => v !== undefined && v !== null) as [string, string][]) 
+      ? '?' + new URLSearchParams(
+          Object.entries(options.params)
+            .filter(([, v]) => v !== undefined && v !== null && v !== '')
+            .map(([k, v]) => [k, String(v)])
+        )
       : ''
     const base = API_BASE_URL || ''
     const href = `${base}${url}${qs}`

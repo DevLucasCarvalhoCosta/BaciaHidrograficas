@@ -2,15 +2,24 @@ import React, { useState } from 'react'
 
 interface DateRangePickerProps {
   onApply: (startDate: string, endDate: string) => void
+  onViewAll?: () => void
 }
 
-export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onApply }) => {
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onApply, onViewAll }) => {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
   const handleApply = () => {
     if (startDate && endDate) {
       onApply(startDate, endDate)
+    }
+  }
+
+  const handleViewAll = () => {
+    setStartDate('')
+    setEndDate('')
+    if (onViewAll) {
+      onViewAll()
     }
   }
 
@@ -71,10 +80,11 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ onApply }) => 
       
       <div className="date-presets">
         <span>Períodos rápidos:</span>
-        <button onClick={() => setPreset('7d')}>7 dias</button>
-        <button onClick={() => setPreset('30d')}>30 dias</button>
-        <button onClick={() => setPreset('90d')}>90 dias</button>
-        <button onClick={() => setPreset('1y')}>1 ano</button>
+        <button onClick={() => setPreset('7d')}>Últimos 7 dias</button>
+        <button onClick={() => setPreset('30d')}>Últimos 30 dias</button>
+        <button onClick={() => setPreset('90d')}>Últimos 90 dias</button>
+        <button onClick={() => setPreset('1y')}>Último ano</button>
+        <button onClick={handleViewAll} className="btn-view-all">📅 Todos os Dados</button>
       </div>
     </div>
   )
