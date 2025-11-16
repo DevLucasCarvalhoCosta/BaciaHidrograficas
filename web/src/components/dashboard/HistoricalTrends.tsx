@@ -260,7 +260,6 @@ export const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data }) => {
       return mes
     }
     
-    // Análise de correlação (simplificada)
     let somaChuvaTempProduto = 0
     for (let i = 0; i < data.length; i++) {
       somaChuvaTempProduto += (chuvaValues[i] - chuvaAvg) * (tempValues[i] - tempAvg)
