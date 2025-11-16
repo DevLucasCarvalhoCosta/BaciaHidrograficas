@@ -18,7 +18,10 @@ export interface HidroStation {
   Latitude?: string | number | null
   Longitude?: string | number | null
   UF_Estacao?: string | null
+  Municipio_Nome?: string | null
   Rio_Nome?: string | null
+  Sub_Bacia_Nome?: string | null
+  Bacia_Nome?: string | null
   Tipo_Estacao?: string | null
   Operando?: string | boolean | null
   Data_Periodo_Pluviometro_Fim?: string | null
@@ -603,7 +606,10 @@ export function MapView({ onGoToSync, selectedStationCode }: MapViewProps) {
                   <div style={{ display: 'grid', gap: '6px', fontSize: '0.9em' }}>
                     <div><strong>🔢 Código:</strong> {s.codigoestacao}</div>
                     {s.UF_Estacao && <div><strong>📍 UF:</strong> {s.UF_Estacao}</div>}
-                    {s.Rio_Nome && <div><strong>🌊 Rio:</strong> {s.Rio_Nome}</div>}
+                    {s.Municipio_Nome && <div><strong>🏙️ Município:</strong> {s.Municipio_Nome}</div>}
+                    {s.Rio_Nome && s.Rio_Nome !== 'N/A' && <div><strong>🌊 Rio:</strong> {s.Rio_Nome}</div>}
+                    {s.Sub_Bacia_Nome && <div><strong>💧 Sub-bacia:</strong> {s.Sub_Bacia_Nome}</div>}
+                    {s.Bacia_Nome && <div><strong>🏞️ Bacia:</strong> {s.Bacia_Nome}</div>}
                     {s.Tipo_Estacao && <div><strong>📊 Tipo:</strong> {s.Tipo_Estacao}</div>}
                     {typeof s.Operando !== 'undefined' && s.Operando !== null && (
                       <div><strong>⚡ Status:</strong> <span style={{ color: isActive ? '#10b981' : '#ef4444', fontWeight: 600 }}>

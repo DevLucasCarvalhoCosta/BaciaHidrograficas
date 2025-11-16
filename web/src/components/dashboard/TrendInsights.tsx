@@ -2,9 +2,8 @@ import React, { useMemo, useState } from 'react'
 
 interface MonthlyData {
   mes: string
-  chuva_maxima: string
+  chuva_mensal: string
   temp_media: string
-  bateria_media: string
   total_medicoes: string
 }
 
@@ -160,24 +159,21 @@ export const TrendInsights: React.FC<TrendInsightsProps> = ({ data }) => {
     const results: InsightItem[] = []
     
     // Extrair valores numéricos
-    const chuvaValues = data.map(d => parseFloat(d.chuva_maxima))
-    const tempValues = data.map(d => parseFloat(d.temp_media))
-    const bateriaValues = data.map(d => parseFloat(d.bateria_media))
+    const chuvaValues = data.map(d => parseFloat(d.chuva_mensal || '0') || 0).filter(v => v > 0)
+    const tempValues = data.map(d => parseFloat(d.temp_media || '0') || 0).filter(v => v > 0)
     
     // Calcular estatísticas
-    const chuvaAvg = chuvaValues.reduce((a, b) => a + b, 0) / chuvaValues.length
-    const tempAvg = tempValues.reduce((a, b) => a + b, 0) / tempValues.length
-    const bateriaAvg = bateriaValues.reduce((a, b) => a + b, 0) / bateriaValues.length
+    const chuvaAvg = chuvaValues.length > 0 ? chuvaValues.reduce((a, b) => a + b, 0) / chuvaValues.length : 0
+    const tempAvg = tempValues.length > 0 ? tempValues.reduce((a, b) => a + b, 0) / tempValues.length : 0
     
-    const chuvaMax = Math.max(...chuvaValues)
-    const chuvaMin = Math.min(...chuvaValues)
-    const tempMax = Math.max(...tempValues)
-    const tempMin = Math.min(...tempValues)
+    const chuvaMax = chuvaValues.length > 0 ? Math.max(...chuvaValues) : 0
+    const chuvaMin = chuvaValues.length > 0 ? Math.min(...chuvaValues) : 0
+    const tempMax = tempValues.length > 0 ? Math.max(...tempValues) : 0
+    const tempMin = tempValues.length > 0 ? Math.min(...tempValues) : 0
     
     // Variação percentual início vs fim
-    const chuvaChangePercent = ((chuvaValues[chuvaValues.length - 1] - chuvaValues[0]) / chuvaValues[0]) * 100
-    const tempChangePercent = ((tempValues[tempValues.length - 1] - tempValues[0]) / tempValues[0]) * 100
-    const bateriaChangePercent = ((bateriaValues[bateriaValues.length - 1] - bateriaValues[0]) / bateriaValues[0]) * 100
+    const chuvaChangePercent = chuvaValues.length > 1 ? ((chuvaValues[chuvaValues.length - 1] - chuvaValues[0]) / chuvaValues[0]) * 100 : 0
+    const tempChangePercent = tempValues.length > 1 ? ((tempValues[tempValues.length - 1] - tempValues[0]) / tempValues[0]) * 100 : 0
     
     // Coeficiente de variação (CV) - medida de variabilidade
     const chuvaStdDev = Math.sqrt(chuvaValues.reduce((sq, n) => sq + Math.pow(n - chuvaAvg, 2), 0) / chuvaValues.length)
@@ -305,35 +301,7 @@ export const TrendInsights: React.FC<TrendInsightsProps> = ({ data }) => {
       })
     }
 
-    // ===== ANÁLISE 4: Saúde do Sistema de Monitoramento =====
-    if (bateriaAvg < 12) {
-      results.push({
-        icon: '🔋',
-        title: 'Tensão de Bateria Crítica',
-        description: `Tensão média de ${bateriaAvg.toFixed(2)}V está abaixo do nível operacional seguro (≥ 12V). Sistema pode parar de funcionar.`,
-        severity: 'critical',
-        recommendation: 'URGENTE: Agendar visita técnica imediata para manutenção da bateria e sistema fotovoltaico.',
-        dataEvidence: `Analisando ${data.length} meses de medições, a tensão média calculada foi ${bateriaAvg.toFixed(2)}V, com valores variando entre ${Math.min(...bateriaValues).toFixed(2)}V e ${Math.max(...bateriaValues).toFixed(2)}V. A média está ${(12 - bateriaAvg).toFixed(2)}V abaixo do limiar mínimo de 12V para operação segura de sistemas de 12V. Baterias operando continuamente abaixo deste nível apresentam alto risco de falha.`,
-        scientificContext: 'Baterias de chumbo-ácido operando abaixo de 12V sofrem sulfatação irreversível, reduzindo drasticamente sua vida útil.'
-      })
-    } else if (bateriaChangePercent < -10) {
-      const primeiroMes = data[0].mes
-      const ultimoMes = data[data.length - 1].mes
-      const primeiraBateria = bateriaValues[0].toFixed(2)
-      const ultimaBateria = bateriaValues[bateriaValues.length - 1].toFixed(2)
-      
-      results.push({
-        icon: '📉',
-        title: 'Degradação Progressiva da Bateria',
-        description: `Queda de ${Math.abs(bateriaChangePercent).toFixed(1)}% na tensão indica degradação do sistema de energia. Pode comprometer continuidade das medições.`,
-        severity: 'warning',
-        recommendation: 'Programar manutenção preventiva em até 30 dias. Verificar painéis solares, controlador de carga e conexões.',
-        dataEvidence: `Comparação temporal mostra degradação progressiva: a tensão caiu de ${primeiraBateria}V em ${primeiroMes} para ${ultimaBateria}V em ${ultimoMes}, representando perda de ${Math.abs(bateriaChangePercent).toFixed(1)}% (${(parseFloat(primeiraBateria) - parseFloat(ultimaBateria)).toFixed(2)}V em termos absolutos). A média do período foi ${bateriaAvg.toFixed(2)}V. Quedas superiores a 10% são indicativas de problemas no sistema de energia.`,
-        scientificContext: 'Degradação gradual é esperada em sistemas off-grid, mas taxas > 10% em períodos curtos indicam problemas que requerem intervenção.'
-      })
-    }
-
-    // ===== ANÁLISE 5: Qualidade e Completude dos Dados =====
+    // ===== ANÁLISE 4: Qualidade e Completude dos Dados =====
     const totalMedicoes = data.map(d => parseInt(d.total_medicoes))
     const medicoesAvg = totalMedicoes.reduce((a, b) => a + b, 0) / totalMedicoes.length
     const esperadoPorMes = 96 * 30 // 96 medições/dia * 30 dias
@@ -382,7 +350,7 @@ export const TrendInsights: React.FC<TrendInsightsProps> = ({ data }) => {
         title: 'Condições Estáveis e Normais',
         description: 'Os dados analisados não apresentam anomalias significativas. Sistema operando dentro dos padrões esperados.',
         severity: 'success',
-        dataEvidence: `Análise detalhada de ${data.length} meses não identificou desvios significativos nos parâmetros monitorados. Precipitação média: ${chuvaAvg.toFixed(1)}mm (CV: ${chuvaCV.toFixed(1)}%); Temperatura média: ${tempAvg.toFixed(1)}°C (amplitude: ${amplitudeTermica.toFixed(1)}°C); Bateria média: ${bateriaAvg.toFixed(2)}V; Completude: ${completude.toFixed(1)}%. Todos os indicadores estão dentro das faixas esperadas para operação normal.`,
+        dataEvidence: `Análise detalhada de ${data.length} meses não identificou desvios significativos nos parâmetros monitorados. Precipitação média: ${chuvaAvg.toFixed(1)}mm (CV: ${chuvaCV.toFixed(1)}%); Temperatura média: ${tempAvg.toFixed(1)}°C (amplitude: ${amplitudeTermica.toFixed(1)}°C); Completude: ${completude.toFixed(1)}%. Todos os indicadores estão dentro das faixas esperadas para operação normal.`,
         scientificContext: 'Estabilidade hidrológica indica condições ambientais adequadas e ausência de perturbações significativas na bacia hidrográfica.'
       })
     }

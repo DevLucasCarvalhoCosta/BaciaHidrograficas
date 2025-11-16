@@ -37,24 +37,34 @@ router.get('/stats/:codigoEstacao', async (req: Request, res: Response) => {
         WHERE codigoestacao = ${codigoEstacao}
       `,
       
-      // Estatísticas gerais
+      // Estatísticas gerais - Agregado por dia primeiro, depois estatísticas sobre os dias
       prisma.$queryRaw`
+        WITH dados_diarios AS (
+          SELECT 
+            DATE("Data_Hora_Medicao") as dia,
+            SUM(CAST(NULLIF("Chuva_Adotada", '') AS DECIMAL)) as chuva_diaria,
+            AVG(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_diaria,
+            AVG(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_diaria,
+            AVG(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_diaria
+          FROM "SerieTelemetrica"
+          WHERE codigoestacao = ${codigoEstacao}
+          GROUP BY DATE("Data_Hora_Medicao")
+        )
         SELECT 
           COUNT(*) as total_medicoes,
-          MIN(CAST("Chuva_Acumulada" AS DECIMAL)) as chuva_min,
-          MAX(CAST("Chuva_Acumulada" AS DECIMAL)) as chuva_max,
-          AVG(CAST("Chuva_Acumulada" AS DECIMAL)) as chuva_media,
-          MIN(CAST("Temperatura_Agua" AS DECIMAL)) as temp_min,
-          MAX(CAST("Temperatura_Agua" AS DECIMAL)) as temp_max,
-          AVG(CAST("Temperatura_Agua" AS DECIMAL)) as temp_media,
-          MIN(CAST("Bateria" AS DECIMAL)) as bateria_min,
-          MAX(CAST("Bateria" AS DECIMAL)) as bateria_max,
-          AVG(CAST("Bateria" AS DECIMAL)) as bateria_media
-        FROM "SerieTelemetrica"
-        WHERE codigoestacao = ${codigoEstacao}
-          AND "Chuva_Acumulada" IS NOT NULL
-          AND "Temperatura_Agua" IS NOT NULL
-          AND "Bateria" IS NOT NULL
+          MIN(chuva_diaria) as chuva_min,
+          MAX(chuva_diaria) as chuva_max,
+          AVG(chuva_diaria) as chuva_media,
+          MIN(temp_diaria) as temp_min,
+          MAX(temp_diaria) as temp_max,
+          AVG(temp_diaria) as temp_media,
+          MIN(cota_diaria) as cota_min,
+          MAX(cota_diaria) as cota_max,
+          AVG(cota_diaria) as cota_media,
+          MIN(vazao_diaria) as vazao_min,
+          MAX(vazao_diaria) as vazao_max,
+          AVG(vazao_diaria) as vazao_media
+        FROM dados_diarios
       `
     ]);
 
@@ -69,7 +79,6 @@ router.get('/stats/:codigoEstacao', async (req: Request, res: Response) => {
   }
 });
 
-// Endpoint: Série temporal de chuva (sempre agregado por dia)
 router.get('/serie-chuva/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
@@ -86,11 +95,11 @@ router.get('/serie-chuva/:codigoEstacao', async (req: Request, res: Response) =>
     let sqlQuery = `
       SELECT 
         DATE("Data_Hora_Medicao") as data,
-        MAX(CAST("Chuva_Acumulada" AS DECIMAL)) as acumulada,
-        MAX(CAST("Chuva_Adotada" AS DECIMAL)) as adotada,
+        SUM(CAST(NULLIF("Chuva_Adotada", '') AS DECIMAL)) as chuva_diaria,
         COUNT(*) as medicoes_dia
       FROM "SerieTelemetrica"
       WHERE codigoestacao = '${codigoEstacao}'
+        AND NULLIF("Chuva_Adotada", '') IS NOT NULL
     `;
     
     if (dataInicio && dataInicio !== '' && typeof dataInicio === 'string') {
@@ -120,8 +129,7 @@ router.get('/serie-chuva/:codigoEstacao', async (req: Request, res: Response) =>
       total: dados.length,
       dados: dados.map(d => ({
         data: d.data,
-        acumulada: d.acumulada,
-        adotada: d.adotada,
+        chuva_diaria: d.chuva_diaria,
         medicoes_dia: d.medicoes_dia
       }))
     }));
@@ -215,11 +223,16 @@ router.get('/agregado-diario/:codigoEstacao', async (req: Request, res: Response
         SELECT 
           DATE("Data_Hora_Medicao") as dia,
           COUNT(*) as total_medicoes,
-          MAX(CAST("Chuva_Acumulada" AS DECIMAL)) as chuva_maxima,
-          AVG(CAST("Temperatura_Agua" AS DECIMAL)) as temp_media,
-          MIN(CAST("Temperatura_Agua" AS DECIMAL)) as temp_minima,
-          MAX(CAST("Temperatura_Agua" AS DECIMAL)) as temp_maxima,
-          AVG(CAST("Bateria" AS DECIMAL)) as bateria_media
+          SUM(CAST(NULLIF("Chuva_Adotada", '') AS DECIMAL)) as chuva_diaria,
+          AVG(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_media,
+          MIN(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_minima,
+          MAX(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_maxima,
+          AVG(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_media,
+          MIN(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_minima,
+          MAX(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_maxima,
+          AVG(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_media,
+          MIN(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_minima,
+          MAX(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_maxima
         FROM "SerieTelemetrica"
         WHERE codigoestacao = ${codigoEstacao}
           AND TO_CHAR("Data_Hora_Medicao", 'YYYY-MM') = ${`${year}-${monthStr}`}
@@ -232,11 +245,16 @@ router.get('/agregado-diario/:codigoEstacao', async (req: Request, res: Response
         SELECT 
           DATE("Data_Hora_Medicao") as dia,
           COUNT(*) as total_medicoes,
-          MAX(CAST("Chuva_Acumulada" AS DECIMAL)) as chuva_maxima,
-          AVG(CAST("Temperatura_Agua" AS DECIMAL)) as temp_media,
-          MIN(CAST("Temperatura_Agua" AS DECIMAL)) as temp_minima,
-          MAX(CAST("Temperatura_Agua" AS DECIMAL)) as temp_maxima,
-          AVG(CAST("Bateria" AS DECIMAL)) as bateria_media
+          SUM(CAST(NULLIF("Chuva_Adotada", '') AS DECIMAL)) as chuva_diaria,
+          AVG(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_media,
+          MIN(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_minima,
+          MAX(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_maxima,
+          AVG(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_media,
+          MIN(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_minima,
+          MAX(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_maxima,
+          AVG(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_media,
+          MIN(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_minima,
+          MAX(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_maxima
         FROM "SerieTelemetrica"
         WHERE codigoestacao = ${codigoEstacao}
         GROUP BY DATE("Data_Hora_Medicao")
@@ -263,13 +281,12 @@ router.get('/comparacao-mensal/:codigoEstacao', async (req: Request, res: Respon
       SELECT 
         TO_CHAR(DATE_TRUNC('month', "Data_Hora_Medicao"), 'YYYY-MM') as mes,
         COUNT(*) as total_medicoes,
-        MAX(CAST("Chuva_Acumulada" AS DECIMAL)) as chuva_maxima,
-        AVG(CAST("Temperatura_Agua" AS DECIMAL)) as temp_media,
-        AVG(CAST("Bateria" AS DECIMAL)) as bateria_media
+        SUM(CAST(NULLIF("Chuva_Adotada", '') AS DECIMAL)) as chuva_mensal,
+        AVG(CAST(NULLIF("Temperatura_Agua", '') AS DECIMAL)) as temp_media,
+        AVG(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_media,
+        AVG(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_media
       FROM "SerieTelemetrica"
       WHERE codigoestacao = ${codigoEstacao}
-        AND "Chuva_Acumulada" IS NOT NULL
-        AND "Temperatura_Agua" IS NOT NULL
       GROUP BY DATE_TRUNC('month', "Data_Hora_Medicao")
       ORDER BY mes ASC
     `;
@@ -288,7 +305,7 @@ router.get('/alertas/:codigoEstacao', async (req: Request, res: Response) => {
   try {
     const { codigoEstacao } = req.params;
 
-    const [tempAlta, tempBaixa, bateriaBaixa] = await Promise.all([
+    const [tempAlta, tempBaixa] = await Promise.all([
       // Temperatura alta (> 30°C)
       prisma.$queryRaw`
         SELECT 
@@ -311,18 +328,6 @@ router.get('/alertas/:codigoEstacao', async (req: Request, res: Response) => {
           AND CAST("Temperatura_Agua" AS DECIMAL) < 15
         ORDER BY "Data_Hora_Medicao" DESC
         LIMIT 10
-      `,
-      
-      // Bateria baixa (< 12V)
-      prisma.$queryRaw`
-        SELECT 
-          "Data_Hora_Medicao",
-          "Bateria"
-        FROM "SerieTelemetrica"
-        WHERE codigoestacao = ${codigoEstacao}
-          AND CAST("Bateria" AS DECIMAL) < 12.0
-        ORDER BY "Data_Hora_Medicao" DESC
-        LIMIT 10
       `
     ]);
 
@@ -330,8 +335,7 @@ router.get('/alertas/:codigoEstacao', async (req: Request, res: Response) => {
       codigoEstacao,
       alertas: {
         temperaturaAlta: tempAlta,
-        temperaturaBaixa: tempBaixa,
-        bateriaBaixa: bateriaBaixa
+        temperaturaBaixa: tempBaixa
       }
     }));
   } catch (error: any) {
@@ -391,6 +395,136 @@ router.get('/dados-brutos/:codigoEstacao', async (req: Request, res: Response) =
       dados
     }));
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint: Série temporal de cota/nível do rio (sempre agregado por dia)
+router.get('/serie-cota/:codigoEstacao', async (req: Request, res: Response) => {
+  try {
+    const { codigoEstacao } = req.params;
+    const { dataInicio, dataFim } = req.query;
+
+    console.log('🔍 [API serie-cota] Request recebido:', {
+      codigoEstacao,
+      dataInicio,
+      dataFim
+    });
+
+    console.log('   📊 Retornando dados AGREGADOS por dia');
+    
+    let sqlQuery = `
+      SELECT 
+        DATE("Data_Hora_Medicao") as data,
+        AVG(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_media,
+        MIN(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_min,
+        MAX(CAST(COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) AS DECIMAL)) as cota_max,
+        COUNT(*) as medicoes_dia
+      FROM "SerieTelemetrica"
+      WHERE codigoestacao = '${codigoEstacao}'
+        AND (COALESCE(NULLIF("Cota_Adotada", ''), NULLIF("Cota_Sensor", '')) IS NOT NULL)
+    `;
+    
+    if (dataInicio && dataInicio !== '' && typeof dataInicio === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" >= '${dataInicio}'`;
+      console.log('   ✓ Filtro data início:', dataInicio);
+    }
+    if (dataFim && dataFim !== '' && typeof dataFim === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" <= '${dataFim}'`;
+      console.log('   ✓ Filtro data fim:', dataFim);
+    }
+    
+    sqlQuery += `
+      GROUP BY DATE("Data_Hora_Medicao")
+      ORDER BY data ASC
+    `;
+    
+    const dados = await prisma.$queryRawUnsafe(sqlQuery) as any[];
+
+    console.log('   ✅ Dados agregados:', dados.length, 'dias');
+    if (dados.length > 0) {
+      console.log('   📊 Primeiro dia:', dados[0]);
+      console.log('   📊 Último dia:', dados[dados.length - 1]);
+    }
+
+    res.json(convertBigInt({
+      codigoEstacao,
+      total: dados.length,
+      dados: dados.map(d => ({
+        data: d.data,
+        cota_media: d.cota_media,
+        cota_min: d.cota_min,
+        cota_max: d.cota_max,
+        medicoes_dia: d.medicoes_dia
+      }))
+    }));
+  } catch (error: any) {
+    console.error('❌ [API serie-cota] Erro:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint: Série temporal de vazão (sempre agregado por dia)
+router.get('/serie-vazao/:codigoEstacao', async (req: Request, res: Response) => {
+  try {
+    const { codigoEstacao } = req.params;
+    const { dataInicio, dataFim } = req.query;
+
+    console.log('🔍 [API serie-vazao] Request recebido:', {
+      codigoEstacao,
+      dataInicio,
+      dataFim
+    });
+
+    console.log('   📊 Retornando dados AGREGADOS por dia');
+    
+    let sqlQuery = `
+      SELECT 
+        DATE("Data_Hora_Medicao") as data,
+        AVG(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_media,
+        MIN(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_min,
+        MAX(CAST(NULLIF("Vazao_Adotada", '') AS DECIMAL)) as vazao_max,
+        COUNT(*) as medicoes_dia
+      FROM "SerieTelemetrica"
+      WHERE codigoestacao = '${codigoEstacao}'
+        AND NULLIF("Vazao_Adotada", '') IS NOT NULL
+    `;
+    
+    if (dataInicio && dataInicio !== '' && typeof dataInicio === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" >= '${dataInicio}'`;
+      console.log('   ✓ Filtro data início:', dataInicio);
+    }
+    if (dataFim && dataFim !== '' && typeof dataFim === 'string') {
+      sqlQuery += ` AND "Data_Hora_Medicao" <= '${dataFim}'`;
+      console.log('   ✓ Filtro data fim:', dataFim);
+    }
+    
+    sqlQuery += `
+      GROUP BY DATE("Data_Hora_Medicao")
+      ORDER BY data ASC
+    `;
+    
+    const dados = await prisma.$queryRawUnsafe(sqlQuery) as any[];
+
+    console.log('   ✅ Dados agregados:', dados.length, 'dias');
+    if (dados.length > 0) {
+      console.log('   📊 Primeiro dia:', dados[0]);
+      console.log('   📊 Último dia:', dados[dados.length - 1]);
+    }
+
+    res.json(convertBigInt({
+      codigoEstacao,
+      total: dados.length,
+      dados: dados.map(d => ({
+        data: d.data,
+        vazao_media: d.vazao_media,
+        vazao_min: d.vazao_min,
+        vazao_max: d.vazao_max,
+        medicoes_dia: d.medicoes_dia
+      }))
+    }));
+  } catch (error: any) {
+    console.error('❌ [API serie-vazao] Erro:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

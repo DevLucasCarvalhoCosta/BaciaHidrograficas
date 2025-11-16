@@ -31,6 +31,8 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
   const [stats, setStats] = useState<any>(null)
   const [serieChuva, setSerieChuva] = useState<any[]>([])
   const [serieTemp, setSerieTemp] = useState<any[]>([])
+  const [serieCota, setSerieCota] = useState<any[]>([])
+  const [serieVazao, setSerieVazao] = useState<any[]>([])
   const [comparacaoMensal, setComparacaoMensal] = useState<any[]>([])
   const [alertas, setAlertas] = useState<any>(null)
   const [agregadoDiario, setAgregadoDiario] = useState<any[]>([])
@@ -45,6 +47,8 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
     // Limpar dados anteriores ao trocar de estação
     setSerieChuva([])
     setSerieTemp([])
+    setSerieCota([])
+    setSerieVazao([])
     setAgregadoDiario([])
     setDadosBrutos([])
     setDateRange(null)
@@ -57,14 +61,10 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
   useEffect(() => {
     console.log('🔄 [useEffect-series] Mudança de aba detectada');
     console.log('   Active Tab:', activeTab);
-    console.log('   Serie Chuva Length:', serieChuva.length);
-    console.log('   Serie Temp Length:', serieTemp.length);
     
-    if (activeTab === 'series' && serieChuva.length === 0 && serieTemp.length === 0) {
-      console.log('   ▶️ Condições atendidas - Carregando séries temporais');
+    if (activeTab === 'series') {
+      console.log('   ▶️ Carregando séries temporais');
       loadSeriesData(undefined, undefined)
-    } else {
-      console.log('   ⏸️ Condições não atendidas - Não vai carregar');
     }
   }, [activeTab])
 
@@ -160,27 +160,37 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
         console.log('   ✓ Filtro dataFim:', dataFim);
       }
       
-      console.log('   � Buscando dados agregados por dia');
+      console.log('   📊 Buscando dados agregados por dia');
       console.log('   📡 Params finais:', params);
       
-      const [chuvaRes, tempRes] = await Promise.all([
-        api.get(`/api/dashboard/serie-chuva/${codigoEstacao}`, { params }),
-        api.get(`/api/dashboard/serie-temperatura/${codigoEstacao}`, { params })
+      const [chuvaRes, tempRes, cotaRes, vazaoRes] = await Promise.all([
+        api.get(`/api/dashboard/serie-chuva/${codigoEstacao}`, { params }).catch(() => ({ dados: [], total: 0 })),
+        api.get(`/api/dashboard/serie-temperatura/${codigoEstacao}`, { params }).catch(() => ({ dados: [], total: 0 })),
+        api.get(`/api/dashboard/serie-cota/${codigoEstacao}`, { params }).catch(() => ({ dados: [], total: 0 })),
+        api.get(`/api/dashboard/serie-vazao/${codigoEstacao}`, { params }).catch(() => ({ dados: [], total: 0 }))
       ]);
       
       console.log('   ✅ Resposta Chuva:', {
         total: chuvaRes.total,
-        dadosLength: chuvaRes.dados?.length || 0,
-        primeiroRegistro: chuvaRes.dados?.[0]
+        dadosLength: chuvaRes.dados?.length || 0
       });
       console.log('   ✅ Resposta Temperatura:', {
         total: tempRes.total,
-        dadosLength: tempRes.dados?.length || 0,
-        primeiroRegistro: tempRes.dados?.[0]
+        dadosLength: tempRes.dados?.length || 0
+      });
+      console.log('   ✅ Resposta Cota:', {
+        total: cotaRes.total,
+        dadosLength: cotaRes.dados?.length || 0
+      });
+      console.log('   ✅ Resposta Vazão:', {
+        total: vazaoRes.total,
+        dadosLength: vazaoRes.dados?.length || 0
       });
       
       setSerieChuva(chuvaRes.dados || []);
       setSerieTemp(tempRes.dados || []);
+      setSerieCota(cotaRes.dados || []);
+      setSerieVazao(vazaoRes.dados || []);
       
       console.log('   ✓ Estados atualizados com sucesso');
     } catch (err) {
@@ -196,12 +206,20 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
     const ultimoMes = comparacaoMensal[comparacaoMensal.length - 1]
     const penultimoMes = comparacaoMensal[comparacaoMensal.length - 2]
     
-    const tendenciaChuva = ultimoMes && penultimoMes 
-      ? ((parseFloat(ultimoMes.chuva_maxima) - parseFloat(penultimoMes.chuva_maxima)) / parseFloat(penultimoMes.chuva_maxima)) * 100
+    const tendenciaChuva = ultimoMes && penultimoMes && ultimoMes.chuva_mensal && penultimoMes.chuva_mensal
+      ? ((parseFloat(ultimoMes.chuva_mensal) - parseFloat(penultimoMes.chuva_mensal)) / parseFloat(penultimoMes.chuva_mensal)) * 100
       : 0
     
-    const tendenciaTemp = ultimoMes && penultimoMes
+    const tendenciaTemp = ultimoMes && penultimoMes && ultimoMes.temp_media && penultimoMes.temp_media
       ? ((parseFloat(ultimoMes.temp_media) - parseFloat(penultimoMes.temp_media)) / parseFloat(penultimoMes.temp_media)) * 100
+      : 0
+    
+    const tendenciaCota = ultimoMes && penultimoMes && ultimoMes.cota_media && penultimoMes.cota_media
+      ? ((parseFloat(ultimoMes.cota_media) - parseFloat(penultimoMes.cota_media)) / parseFloat(penultimoMes.cota_media)) * 100
+      : 0
+    
+    const tendenciaVazao = ultimoMes && penultimoMes && ultimoMes.vazao_media && penultimoMes.vazao_media
+      ? ((parseFloat(ultimoMes.vazao_media) - parseFloat(penultimoMes.vazao_media)) / parseFloat(penultimoMes.vazao_media)) * 100
       : 0
 
     return {
@@ -213,11 +231,16 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
       tempMin: parseFloat(est.temp_min || 0),
       tempMax: parseFloat(est.temp_max || 0),
       tempMedia: parseFloat(est.temp_media || 0),
-      bateriaMin: parseFloat(est.bateria_min || 0),
-      bateriaMax: parseFloat(est.bateria_max || 0),
-      bateriaMedia: parseFloat(est.bateria_media || 0),
+      cotaMin: parseFloat(est.cota_min || 0),
+      cotaMax: parseFloat(est.cota_max || 0),
+      cotaMedia: parseFloat(est.cota_media || 0),
+      vazaoMin: parseFloat(est.vazao_min || 0),
+      vazaoMax: parseFloat(est.vazao_max || 0),
+      vazaoMedia: parseFloat(est.vazao_media || 0),
       tendenciaChuva,
       tendenciaTemp,
+      tendenciaCota,
+      tendenciaVazao,
       ultimoMes: ultimoMes?.mes,
       totalMeses: comparacaoMensal.length
     }
@@ -346,33 +369,50 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
           <div className="overview-tab">
             {/* Cards de estatísticas */}
             <div className="stats-grid">
-              <StatCard
-                title="Chuva Acumulada"
-                icon="🌧️"
-                value={insights.chuvaMedia.toFixed(2)}
-                unit="mm"
-                subtitle={`Variação: ${insights.chuvaMin.toFixed(1)} - ${insights.chuvaMax.toFixed(1)} mm`}
-                trend={insights.tendenciaChuva}
-                color="#3b82f6"
-              />
-              <StatCard
-                title="Temperatura da Água"
-                icon="🌡️"
-                value={insights.tempMedia.toFixed(1)}
-                unit="°C"
-                subtitle={`Variação: ${insights.tempMin.toFixed(1)} - ${insights.tempMax.toFixed(1)} °C`}
-                trend={insights.tendenciaTemp}
-                color="#ef4444"
-              />
-              <StatCard
-                title="Bateria"
-                icon="🔋"
-                value={insights.bateriaMedia.toFixed(2)}
-                unit="V"
-                subtitle={`Variação: ${insights.bateriaMin.toFixed(1)} - ${insights.bateriaMax.toFixed(1)} V`}
-                trend={0}
-                color="#10b981"
-              />
+              {insights.cotaMedia > 0 && (
+                <StatCard
+                  title="Nível do Rio"
+                  icon="🌊"
+                  value={insights.cotaMedia.toFixed(2)}
+                  unit="m"
+                  subtitle={`Variação: ${insights.cotaMin.toFixed(2)} - ${insights.cotaMax.toFixed(2)} m`}
+                  trend={insights.tendenciaCota}
+                  color="#0ea5e9"
+                />
+              )}
+              {insights.vazaoMedia > 0 && (
+                <StatCard
+                  title="Vazão"
+                  icon="💧"
+                  value={insights.vazaoMedia.toFixed(2)}
+                  unit="m³/s"
+                  subtitle={`Variação: ${insights.vazaoMin.toFixed(2)} - ${insights.vazaoMax.toFixed(2)} m³/s`}
+                  trend={insights.tendenciaVazao}
+                  color="#06b6d4"
+                />
+              )}
+              {insights.chuvaMedia > 0 && (
+                <StatCard
+                  title="Chuva Diária (Média)"
+                  icon="🌧️"
+                  value={insights.chuvaMedia.toFixed(2)}
+                  unit="mm"
+                  subtitle={`Variação: ${insights.chuvaMin.toFixed(1)} - ${insights.chuvaMax.toFixed(1)} mm/dia`}
+                  trend={insights.tendenciaChuva}
+                  color="#3b82f6"
+                />
+              )}
+              {insights.tempMedia > 0 && (
+                <StatCard
+                  title="Temperatura da Água"
+                  icon="🌡️"
+                  value={insights.tempMedia.toFixed(1)}
+                  unit="°C"
+                  subtitle={`Variação: ${insights.tempMin.toFixed(1)} - ${insights.tempMax.toFixed(1)} °C`}
+                  trend={insights.tendenciaTemp}
+                  color="#ef4444"
+                />
+              )}
               <StatCard
                 title="Registros"
                 icon="📝"
@@ -420,56 +460,113 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
             {/* Gráficos de dados diários */}
             {agregadoDiario.length > 0 ? (
               <div className="charts-grid">
-                <div className="chart-card">
-                  <h3>🌧️ Chuva Máxima Diária</h3>
-                  <p className="chart-description">
-                    Este gráfico mostra o <strong>pico de precipitação registrado em cada dia</strong> do mês selecionado. 
-                    Cada barra representa um dia do mês. Valores altos indicam eventos de chuva intensa que podem causar enchentes. 
-                    As linhas verticais tracejadas facilitam a identificação de cada dia.
-                  </p>
-                  <BarChart
-                    data={agregadoDiario}
-                    xKey="dia"
-                    yKey="chuva_maxima"
-                    color="#3b82f6"
-                    unit="mm"
-                  />
-                  <div className="chart-legend">
-                    <span className="legend-item">
-                      <span className="legend-bar" style={{ background: 'linear-gradient(180deg, #3b82f6 0%, rgba(59, 130, 246, 0.7) 100%)' }}></span>
-                      Cada barra = 1 dia
-                    </span>
-                    <span className="legend-item">
-                      <span className="legend-line" style={{ borderLeft: '2px dashed #f3f4f6' }}></span>
-                      Grade diária
-                    </span>
+                {agregadoDiario.some(d => d.cota_media && parseFloat(d.cota_media) > 0) && (
+                  <div className="chart-card">
+                    <h3>🌊 Nível do Rio - Evolução Diária</h3>
+                    <p className="chart-description">
+                      Monitoramento do <strong>nível médio do rio</strong> ao longo dos dias do mês selecionado. 
+                      O nível representa a altura da superfície da água medida em metros. 
+                      Aumentos significativos podem indicar risco de enchentes, enquanto quedas acentuadas podem sinalizar estiagem.
+                    </p>
+                    <LineChart
+                      data={agregadoDiario.filter(d => d.cota_media && parseFloat(d.cota_media) > 0)}
+                      xKey="dia"
+                      yKey="cota_media"
+                      color="#0ea5e9"
+                      unit="m"
+                    />
+                    <div className="chart-legend">
+                      <span className="legend-item">
+                        <span className="legend-point" style={{ background: '#0ea5e9' }}></span>
+                        Cada ponto = 1 dia
+                      </span>
+                      <span className="legend-item">
+                        <span className="legend-line" style={{ borderLeft: '2px solid #0ea5e9', opacity: 0.8 }}></span>
+                        Tendência do nível
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="chart-card">
-                  <h3>🌡️ Temperatura Média Diária</h3>
-                  <p className="chart-description">
-                    Apresenta a <strong>temperatura média da água</strong> calculada a partir de todas as medições do dia. 
-                    Cada ponto na linha representa um dia do mês. Variações abruptas podem indicar mudanças climáticas ou entrada de afluentes. 
-                    A temperatura ideal varia entre 20-25°C para a maioria dos ecossistemas aquáticos.
-                  </p>
-                  <LineChart
-                    data={agregadoDiario}
-                    xKey="dia"
-                    yKey="temp_media"
-                    color="#ef4444"
-                    unit="°C"
-                  />
-                  <div className="chart-legend">
-                    <span className="legend-item">
-                      <span className="legend-point" style={{ background: '#ef4444' }}></span>
-                      Cada ponto = 1 dia
-                    </span>
-                    <span className="legend-item">
-                      <span className="legend-line" style={{ borderLeft: '2px solid #ef4444', opacity: 0.8 }}></span>
-                      Tendência diária
-                    </span>
+                )}
+                {agregadoDiario.some(d => d.vazao_media && parseFloat(d.vazao_media) > 0) && (
+                  <div className="chart-card">
+                    <h3>💧 Vazão - Volume de Água Diário</h3>
+                    <p className="chart-description">
+                      Medição do <strong>volume de água que passa pela seção do rio</strong> em metros cúbicos por segundo (m³/s). 
+                      Cada barra representa a vazão média diária. A vazão é essencial para gestão hídrica, geração de energia e navegação.
+                    </p>
+                    <BarChart
+                      data={agregadoDiario.filter(d => d.vazao_media && parseFloat(d.vazao_media) > 0)}
+                      xKey="dia"
+                      yKey="vazao_media"
+                      color="#06b6d4"
+                      unit="m³/s"
+                    />
+                    <div className="chart-legend">
+                      <span className="legend-item">
+                        <span className="legend-bar" style={{ background: 'linear-gradient(180deg, #06b6d4 0%, rgba(6, 182, 212, 0.7) 100%)' }}></span>
+                        Cada barra = 1 dia
+                      </span>
+                      <span className="legend-item">
+                        <span className="legend-line" style={{ borderLeft: '2px dashed #f3f4f6' }}></span>
+                        Grade diária
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
+                {agregadoDiario.some(d => d.chuva_diaria && parseFloat(d.chuva_diaria) > 0) && (
+                  <div className="chart-card">
+                    <h3>🌧️ Chuva Diária</h3>
+                    <p className="chart-description">
+                      Este gráfico mostra o <strong>total de precipitação registrado em cada dia</strong> do mês selecionado. 
+                      O valor representa a soma de todas as medições de chuva_adotada do dia em milímetros (mm). 
+                      Útil para correlacionar com variações no nível do rio e entender o impacto das chuvas na bacia hidrográfica.
+                    </p>
+                    <BarChart
+                      data={agregadoDiario.filter(d => d.chuva_diaria && parseFloat(d.chuva_diaria) > 0)}
+                      xKey="dia"
+                      yKey="chuva_diaria"
+                      color="#3b82f6"
+                      unit="mm"
+                    />
+                    <div className="chart-legend">
+                      <span className="legend-item">
+                        <span className="legend-bar" style={{ background: 'linear-gradient(180deg, #3b82f6 0%, rgba(59, 130, 246, 0.7) 100%)' }}></span>
+                        Cada barra = 1 dia
+                      </span>
+                      <span className="legend-item">
+                        <span className="legend-line" style={{ borderLeft: '2px dashed #f3f4f6' }}></span>
+                        Grade diária
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {agregadoDiario.some(d => d.temp_media && parseFloat(d.temp_media) > 0) && (
+                  <div className="chart-card">
+                    <h3>🌡️ Temperatura Média Diária</h3>
+                    <p className="chart-description">
+                      Apresenta a <strong>temperatura média da água</strong> calculada a partir de todas as medições do dia. 
+                      Cada ponto na linha representa um dia do mês. Variações abruptas podem indicar mudanças climáticas ou entrada de afluentes. 
+                      A temperatura ideal varia entre 20-25°C para a maioria dos ecossistemas aquáticos.
+                    </p>
+                    <LineChart
+                      data={agregadoDiario.filter(d => d.temp_media && parseFloat(d.temp_media) > 0)}
+                      xKey="dia"
+                      yKey="temp_media"
+                      color="#ef4444"
+                      unit="°C"
+                    />
+                    <div className="chart-legend">
+                      <span className="legend-item">
+                        <span className="legend-point" style={{ background: '#ef4444' }}></span>
+                        Cada ponto = 1 dia
+                      </span>
+                      <span className="legend-item">
+                        <span className="legend-line" style={{ borderLeft: '2px solid #ef4444', opacity: 0.8 }}></span>
+                        Tendência diária
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : selectedMonth ? (
               <div className="empty-state">
@@ -499,11 +596,6 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
         {/* TAB: Séries Temporais */}
         {activeTab === 'series' && (
           <div className="series-tab">
-            {(() => {
-              console.log('🎨 [Render Series Tab] serieChuva.length:', serieChuva.length, 'serieTemp.length:', serieTemp.length);
-              return null;
-            })()}
-            
             <DateRangePicker
               onApply={(start: string, end: string) => {
                 console.log('📅 [DateRangePicker] Aplicar período:', { start, end });
@@ -517,18 +609,70 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               }}
             />
             
-            {serieChuva.length > 0 && (
+            {serieCota.length > 0 && (
               <div className="chart-card">
-                <h3>🌧️ Série Temporal - Chuva Acumulada</h3>
+                <h3>🌊 Série Temporal - Nível do Rio</h3>
                 <p className="chart-description">
                   <strong>Visualização por dia</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
-                  Cada ponto representa o <strong>valor máximo de chuva</strong> registrado no dia. 
-                  As medições originais são feitas a cada 15 minutos pela estação telemétrica e agregadas diariamente para melhor visualização.
+                  Cada ponto representa o <strong>nível médio do rio em metros</strong>. 
+                  O nível do rio é fundamental para monitoramento de cheias e gestão de recursos hídricos.
+                </p>
+                <TimeSeriesChart
+                  data={serieCota}
+                  xKey="data"
+                  yKey="cota_media"
+                  color="#0ea5e9"
+                  unit="m"
+                />
+                <div className="chart-insights">
+                  <p><strong>Total de dias:</strong> {serieCota.length.toLocaleString()}</p>
+                  <p><strong>Período:</strong> {dateRange ? (() => {
+                    try {
+                      const start = new Date(dateRange.start)
+                      const end = new Date(dateRange.end)
+                      if (isNaN(start.getTime()) || isNaN(end.getTime())) return 'N/A'
+                      return `${start.toLocaleDateString('pt-BR')} a ${end.toLocaleDateString('pt-BR')}`
+                    } catch {
+                      return 'N/A'
+                    }
+                  })() : 'Todo o histórico'}</p>
+                </div>
+              </div>
+            )}
+
+            {serieVazao.length > 0 && (
+              <div className="chart-card">
+                <h3>💧 Série Temporal - Vazão</h3>
+                <p className="chart-description">
+                  <strong>Médias diárias de vazão</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
+                  Cada ponto representa o <strong>volume médio de água que passou pela seção do rio</strong> em metros cúbicos por segundo. 
+                  Essencial para planejamento de uso múltiplo da água.
+                </p>
+                <TimeSeriesChart
+                  data={serieVazao}
+                  xKey="data"
+                  yKey="vazao_media"
+                  color="#06b6d4"
+                  unit="m³/s"
+                />
+                <div className="chart-insights">
+                  <p><strong>Total de dias:</strong> {serieVazao.length.toLocaleString()}</p>
+                </div>
+              </div>
+            )}
+            
+            {serieChuva.length > 0 && (
+              <div className="chart-card">
+                <h3>🌧️ Série Temporal - Chuva Diária</h3>
+                <p className="chart-description">
+                  <strong>Visualização por dia</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
+                  Cada ponto representa o <strong>total de chuva do dia</strong> (soma de chuva_adotada em MM). 
+                  Ideal para correlacionar com variações no nível do rio e entender padrões de precipitação na bacia.
                 </p>
                 <TimeSeriesChart
                   data={serieChuva}
                   xKey="data"
-                  yKey="acumulada"
+                  yKey="chuva_diaria"
                   color="#3b82f6"
                   unit="mm"
                 />
@@ -552,19 +696,17 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               <div className="chart-card">
                 <h3>🌡️ Série Temporal - Temperatura da Água</h3>
                 <p className="chart-description">
-                  <strong>Médias diárias de temperatura</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
-                  Cada ponto representa a <strong>temperatura média</strong> de água (linha vermelha) e interna (linha laranja) do dia. 
+                  <strong>Médias diárias de temperatura da água</strong> {dateRange ? 'do período selecionado' : 'de todo o histórico disponível'}. 
+                  Cada ponto representa a <strong>temperatura média da água</strong> do dia. 
                   As medições originais são feitas a cada 15 minutos e agregadas diariamente.
                 </p>
                 <TimeSeriesChart
                   data={serieTemp}
                   xKey="data"
                   yKey="agua"
-                  secondaryKey="interna"
                   color="#ef4444"
-                  secondaryColor="#f59e0b"
                   unit="°C"
-                  legend={['Água', 'Interna']}
+                  legend={['Temperatura da Água']}
                 />
                 <div className="chart-insights">
                   <p><strong>Total de dias:</strong> {serieTemp.length.toLocaleString()}</p>
@@ -572,17 +714,14 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               </div>
             )}
 
-            {serieChuva.length === 0 && serieTemp.length === 0 && (() => {
-              console.log('⚠️ [Empty State] Nenhum dado de série temporal disponível');
-              return (
-                <div className="empty-state">
-                  <p>⏳ Carregando séries temporais ou sem dados disponíveis...</p>
-                  <p style={{ fontSize: '14px', color: '#6b7280' }}>
-                    Aguarde enquanto carregamos os dados
-                  </p>
-                </div>
-              );
-            })()}
+            {serieCota.length === 0 && serieVazao.length === 0 && serieChuva.length === 0 && serieTemp.length === 0 && (
+              <div className="empty-state">
+                <p>⏳ Carregando séries temporais ou sem dados disponíveis...</p>
+                <p style={{ fontSize: '14px', color: '#6b7280' }}>
+                  Aguarde enquanto carregamos os dados
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -617,7 +756,7 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               <h3>📋 Tabela Comparativa Mensal</h3>
               <p className="chart-description">
                 Dados consolidados mês a mês com <strong>valores numéricos precisos</strong> para análises detalhadas. 
-                Inclui volume de medições (completude dos dados), picos de chuva, médias térmicas e estado da bateria. 
+                Inclui volume de medições (completude dos dados), precipitação mensal e médias térmicas. 
                 Exportável para análises estatísticas externas e relatórios técnicos.
               </p>
               <table>
@@ -625,9 +764,8 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                   <tr>
                     <th>Mês</th>
                     <th>Medições</th>
-                    <th>Chuva Máx (mm)</th>
+                    <th>Chuva Mensal (mm)</th>
                     <th>Temp Média (°C)</th>
-                    <th>Bateria (V)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -635,9 +773,8 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                     <tr key={m.mes}>
                       <td>{new Date(m.mes + '-01').toLocaleDateString('pt-BR', { year: 'numeric', month: 'long' })}</td>
                       <td>{parseInt(m.total_medicoes).toLocaleString()}</td>
-                      <td>{parseFloat(m.chuva_maxima).toFixed(2)}</td>
-                      <td>{parseFloat(m.temp_media).toFixed(1)}</td>
-                      <td>{parseFloat(m.bateria_media).toFixed(2)}</td>
+                      <td>{m.chuva_mensal ? parseFloat(m.chuva_mensal).toFixed(2) : 'N/A'}</td>
+                      <td>{m.temp_media ? parseFloat(m.temp_media).toFixed(1) : 'N/A'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -664,13 +801,6 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                 severity="info"
                 icon="🧊"
               />
-              <AlertCard
-                title="🔋 Bateria Baixa"
-                subtitle="Registros com bateria < 12V"
-                data={alertas.bateriaBaixa}
-                severity="danger"
-                icon="⚠️"
-              />
             </div>
 
             <div className="alerts-info">
@@ -678,7 +808,6 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               <ul>
                 <li><strong>Temperatura Alta:</strong> Valores acima de 30°C podem indicar condições anormais ou problemas no sensor.</li>
                 <li><strong>Temperatura Baixa:</strong> Valores abaixo de 15°C são incomuns e devem ser verificados.</li>
-                <li><strong>Bateria Baixa:</strong> Valores abaixo de 12V indicam necessidade de manutenção preventiva.</li>
               </ul>
             </div>
           </div>
@@ -856,11 +985,11 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                   format: (value) => value || 'N/A'
                 },
                 {
-                  key: 'Bateria',
-                  label: 'Bateria (V)',
+                  key: 'Temp_Interna',
+                  label: 'Temp. Interna (°C)',
                   sortable: true,
                   filterable: false,
-                  format: (value) => value != null ? Number(value).toFixed(2) : 'N/A'
+                  format: (value) => value != null ? Number(value).toFixed(1) : 'N/A'
                 }
               ]}
             />
@@ -875,7 +1004,6 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                 <li><strong>Vazão:</strong> Volume de água adotado em m³/s</li>
                 <li><strong>Temperaturas:</strong> Água e interna do equipamento em °C</li>
                 <li><strong>Pressão:</strong> Pressão atmosférica em hPa</li>
-                <li><strong>Bateria:</strong> Tensão da bateria do equipamento em V</li>
                 <li><strong>Status:</strong> Códigos de qualidade para cada medição</li>
               </ul>
               <p>Use os filtros nas colunas para buscar valores específicos e clique nos cabeçalhos para ordenar.</p>
@@ -916,8 +1044,8 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                   }
                 },
                 {
-                  key: 'chuva_maxima',
-                  label: 'Chuva Máxima (mm)',
+                  key: 'chuva_diaria',
+                  label: 'Chuva Diária (mm)',
                   sortable: true,
                   filterable: false,
                   format: (value) => value != null ? Number(value).toFixed(2) : 'N/A'
@@ -944,13 +1072,6 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
                   format: (value) => value != null ? Number(value).toFixed(2) : 'N/A'
                 },
                 {
-                  key: 'bateria_media',
-                  label: 'Bateria Média (V)',
-                  sortable: true,
-                  filterable: false,
-                  format: (value) => value != null ? Number(value).toFixed(2) : 'N/A'
-                },
-                {
                   key: 'total_medicoes',
                   label: 'Total Medições',
                   sortable: true,
@@ -964,9 +1085,8 @@ export const StationDashboard: React.FC<StationDashboardProps> = ({ codigoEstaca
               <h3>💡 Sobre os Dados Agregados</h3>
               <ul>
                 <li><strong>Dados transformados:</strong> Agregação diária dos registros brutos</li>
-                <li><strong>Chuva Máxima:</strong> Maior valor de chuva acumulada registrado no dia</li>
+                <li><strong>Chuva Diária:</strong> Soma de todos os valores de chuva_adotada registrados no dia (total de precipitação em mm)</li>
                 <li><strong>Temperaturas:</strong> Média, mínima e máxima calculadas a partir de todos os registros do dia</li>
-                <li><strong>Bateria:</strong> Tensão média da bateria ao longo do dia</li>
                 <li><strong>Total Medições:</strong> Quantidade de registros brutos usados no cálculo (ideal: 96)</li>
               </ul>
               <p>Use os filtros nas colunas para buscar valores específicos e clique nos cabeçalhos para ordenar.</p>

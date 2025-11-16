@@ -158,13 +158,6 @@ interface TrendAnalysis {
     stdDev: number
     amplitude: number
   }
-  bateria: {
-    start: number
-    end: number
-    change: number
-    avg: number
-    status: 'excelente' | 'bom' | 'adequado' | 'crítico'
-  }
   sazonalidade: {
     periodoMaisChuvoso: string
     periodoMaisQuente: string
@@ -184,44 +177,46 @@ export const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data }) => {
     const lastMonth = data[data.length - 1]
     
     // Valores numéricos
-    const chuvaValues = data.map(d => parseFloat(d.chuva_maxima))
-    const tempValues = data.map(d => parseFloat(d.temp_media))
-    const bateriaValues = data.map(d => parseFloat(d.bateria_media))
+    const chuvaValues = data.map(d => parseFloat(d.chuva_mensal || '0') || 0)
+    const tempValues = data.map(d => parseFloat(d.temp_media || '0') || 0)
+    
+    const chuvaValidValues = chuvaValues.filter(v => v > 0)
+    const tempValidValues = tempValues.filter(v => v > 0)
     
     // Cálculos estatísticos - Chuva
-    const chuvaAvg = chuvaValues.reduce((a, b) => a + b, 0) / chuvaValues.length
-    const chuvaMax = Math.max(...chuvaValues)
-    const chuvaMin = Math.min(...chuvaValues)
-    const chuvaStdDev = Math.sqrt(chuvaValues.reduce((sq, n) => sq + Math.pow(n - chuvaAvg, 2), 0) / chuvaValues.length)
-    const chuvaCoefficient = (chuvaStdDev / chuvaAvg) * 100
+    const chuvaAvg = chuvaValidValues.length > 0 ? chuvaValidValues.reduce((a, b) => a + b, 0) / chuvaValidValues.length : 0
+    const chuvaMax = chuvaValidValues.length > 0 ? Math.max(...chuvaValidValues) : 0
+    const chuvaMin = chuvaValidValues.length > 0 ? Math.min(...chuvaValidValues) : 0
+    const chuvaStdDev = chuvaValidValues.length > 0 && chuvaAvg > 0 
+      ? Math.sqrt(chuvaValidValues.reduce((sq, n) => sq + Math.pow(n - chuvaAvg, 2), 0) / chuvaValidValues.length) 
+      : 0
+    const chuvaCoefficient = chuvaAvg > 0 ? (chuvaStdDev / chuvaAvg) * 100 : 0
     
     // Cálculos estatísticos - Temperatura
-    const tempAvg = tempValues.reduce((a, b) => a + b, 0) / tempValues.length
-    const tempMax = Math.max(...tempValues)
-    const tempMin = Math.min(...tempValues)
-    const tempStdDev = Math.sqrt(tempValues.reduce((sq, n) => sq + Math.pow(n - tempAvg, 2), 0) / tempValues.length)
+    const tempAvg = tempValidValues.length > 0 ? tempValidValues.reduce((a, b) => a + b, 0) / tempValidValues.length : 0
+    const tempMax = tempValidValues.length > 0 ? Math.max(...tempValidValues) : 0
+    const tempMin = tempValidValues.length > 0 ? Math.min(...tempValidValues) : 0
+    const tempStdDev = tempValidValues.length > 0 && tempAvg > 0
+      ? Math.sqrt(tempValidValues.reduce((sq, n) => sq + Math.pow(n - tempAvg, 2), 0) / tempValidValues.length)
+      : 0
     const tempAmplitude = tempMax - tempMin
     
-    // Cálculos estatísticos - Bateria
-    const bateriaAvg = bateriaValues.reduce((a, b) => a + b, 0) / bateriaValues.length
-    let bateriaStatus: 'excelente' | 'bom' | 'adequado' | 'crítico'
-    if (bateriaAvg >= 13) bateriaStatus = 'excelente'
-    else if (bateriaAvg >= 12.5) bateriaStatus = 'bom'
-    else if (bateriaAvg >= 12) bateriaStatus = 'adequado'
-    else bateriaStatus = 'crítico'
-    
     // Mudanças percentuais
-    const chuvaChange = ((parseFloat(lastMonth.chuva_maxima) - parseFloat(firstMonth.chuva_maxima)) / parseFloat(firstMonth.chuva_maxima)) * 100
-    const tempChange = ((parseFloat(lastMonth.temp_media) - parseFloat(firstMonth.temp_media)) / parseFloat(firstMonth.temp_media)) * 100
-    const bateriaChange = ((parseFloat(lastMonth.bateria_media) - parseFloat(firstMonth.bateria_media)) / parseFloat(firstMonth.bateria_media)) * 100
+    const firstChuva = parseFloat(firstMonth.chuva_mensal || '0') || 0
+    const lastChuva = parseFloat(lastMonth.chuva_mensal || '0') || 0
+    const chuvaChange = firstChuva > 0 ? ((lastChuva - firstChuva) / firstChuva) * 100 : 0
+    
+    const firstTemp = parseFloat(firstMonth.temp_media || '0') || 0
+    const lastTemp = parseFloat(lastMonth.temp_media || '0') || 0
+    const tempChange = firstTemp > 0 ? ((lastTemp - firstTemp) / firstTemp) * 100 : 0
     
     // Identificar sazonalidade - encontrar diretamente no array original de dados
     
     // Buscar o mês com maior chuva
     let mesComMaiorChuva = data[0]
-    let maiorChuva = parseFloat(data[0].chuva_maxima)
+    let maiorChuva = parseFloat(data[0].chuva_mensal || '0') || 0
     for (let i = 1; i < data.length; i++) {
-      const chuvaAtual = parseFloat(data[i].chuva_maxima)
+      const chuvaAtual = parseFloat(data[i].chuva_mensal || '0') || 0
       if (chuvaAtual > maiorChuva) {
         maiorChuva = chuvaAtual
         mesComMaiorChuva = data[i]
@@ -279,8 +274,8 @@ export const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data }) => {
       periodo: `${formatMes(firstMonth.mes)} → ${formatMes(lastMonth.mes)}`,
       meses: data.length,
       chuva: {
-        start: parseFloat(firstMonth.chuva_maxima),
-        end: parseFloat(lastMonth.chuva_maxima),
+        start: firstChuva,
+        end: lastChuva,
         change: chuvaChange,
         avg: chuvaAvg,
         max: chuvaMax,
@@ -297,13 +292,6 @@ export const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data }) => {
         min: tempMin,
         stdDev: tempStdDev,
         amplitude: tempAmplitude
-      },
-      bateria: {
-        start: parseFloat(firstMonth.bateria_media),
-        end: parseFloat(lastMonth.bateria_media),
-        change: bateriaChange,
-        avg: bateriaAvg,
-        status: bateriaStatus
       },
       sazonalidade: {
         periodoMaisChuvoso: formatMes(mesComMaiorChuva.mes),
@@ -331,16 +319,6 @@ export const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data }) => {
     if (value > 5) return '#10b981'
     if (value < -5) return '#ef4444'
     return '#6b7280'
-  }
-
-  const getBateriaColor = (status: string) => {
-    const colors = {
-      'excelente': '#10b981',
-      'bom': '#3b82f6',
-      'adequado': '#f59e0b',
-      'crítico': '#ef4444'
-    }
-    return colors[status as keyof typeof colors] || '#6b7280'
   }
 
   return (
@@ -514,128 +492,9 @@ export const HistoricalTrends: React.FC<HistoricalTrendsProps> = ({ data }) => {
             </div>
           </div>
         </div>
-
-        {/* Card Bateria */}
-        <div className="trend-card-enhanced" style={{ position: 'relative' }}>
-          <InfoTooltip
-            title="Sistema de Energia"
-            content={
-              <>
-                <p>
-                  <strong>Tensão da Bateria</strong> indica a saúde do sistema de 
-                  energia off-grid (solar + bateria) da estação de monitoramento.
-                </p>
-                <div className="tooltip-section">
-                  <div className="tooltip-section-title">🔋 Classificação de Status:</div>
-                  <ul>
-                    <li><strong style={{color: '#10b981'}}>Excelente (≥ 13V):</strong> Sistema totalmente carregado</li>
-                    <li><strong style={{color: '#3b82f6'}}>Bom (12.5-13V):</strong> Operação normal</li>
-                    <li><strong style={{color: '#f59e0b'}}>Adequado (12-12.5V):</strong> Requer monitoramento</li>
-                    <li><strong style={{color: '#ef4444'}}>Crítico ({'<'} 12V):</strong> Manutenção urgente!</li>
-                  </ul>
-                </div>
-                <div className="tooltip-note">
-                  ⚡ Baterias de chumbo-ácido operando abaixo de 12V sofrem 
-                  degradação irreversível (sulfatação).
-                </div>
-              </>
-            }
-          />
-          <div className="trend-card-header">
-            <span className="trend-icon-large">🔋</span>
-            <div>
-              <h5>Sistema</h5>
-              <p className="metric-subtitle">Saúde da Bateria</p>
-            </div>
-          </div>
-          
-          <div className="trend-values-enhanced">
-            <div className="value-box">
-              <span className="value-label">Início</span>
-              <span className="value-number">{trends.bateria.start.toFixed(2)}</span>
-              <span className="value-unit">V</span>
-            </div>
-            <div className="trend-arrow-large" style={{ color: getTrendColor(trends.bateria.change) }}>
-              {getTrendIcon(trends.bateria.change)}
-            </div>
-            <div className="value-box">
-              <span className="value-label">Atual</span>
-              <span className="value-number">{trends.bateria.end.toFixed(2)}</span>
-              <span className="value-unit">V</span>
-            </div>
-          </div>
-          
-          <div className="trend-change-badge" style={{ 
-            background: getTrendColor(trends.bateria.change) + '20',
-            color: getTrendColor(trends.bateria.change),
-            borderColor: getTrendColor(trends.bateria.change)
-          }}>
-            {trends.bateria.change > 0 ? '+' : ''}{trends.bateria.change.toFixed(1)}% de variação
-          </div>
-
-          <div className="trend-stats">
-            <div className="stat-row">
-              <span className="stat-label">� Média:</span>
-              <span className="stat-value">{trends.bateria.avg.toFixed(2)} V</span>
-            </div>
-            <div className="stat-row" style={{ marginTop: '12px' }}>
-              <span className="stat-label">🔍 Status:</span>
-              <span 
-                className="status-badge" 
-                style={{ 
-                  background: getBateriaColor(trends.bateria.status) + '20',
-                  color: getBateriaColor(trends.bateria.status),
-                  borderColor: getBateriaColor(trends.bateria.status)
-                }}
-              >
-                {trends.bateria.status.toUpperCase()}
-              </span>
-            </div>
-            <div className="status-info">
-              {trends.bateria.status === 'excelente' && '✅ Sistema totalmente carregado'}
-              {trends.bateria.status === 'bom' && '✓ Operação normal'}
-              {trends.bateria.status === 'adequado' && '⚠️ Monitorar carga'}
-              {trends.bateria.status === 'crítico' && '🚨 Manutenção urgente'}
-            </div>
-          </div>
-        </div>
       </div>
 
-      {/* Análise de sazonalidade */}
       <div className="seasonality-section" style={{ position: 'relative' }}>
-        <InfoTooltip
-          title="Análise de Sazonalidade"
-          content={
-            <>
-              <p>
-                <strong>Sazonalidade</strong> refere-se aos padrões cíclicos que se 
-                repetem ao longo do ano devido a fatores climáticos e astronômicos.
-              </p>
-              <div className="tooltip-section">
-                <div className="tooltip-section-title">📊 Metodologia:</div>
-                <p>
-                  Identificamos os meses com valores extremos (máximos e mínimos) 
-                  de cada variável para caracterizar os períodos sazonais.
-                </p>
-              </div>
-              <div className="tooltip-section">
-                <div className="tooltip-section-title">🌍 Importância:</div>
-                <ul>
-                  <li>Planejamento de agricultura irrigada</li>
-                  <li>Gestão de reservatórios hídricos</li>
-                  <li>Previsão de riscos de enchentes/secas</li>
-                </ul>
-              </div>
-              <div className="tooltip-note">
-                💡 Padrões sazonais consistentes indicam estabilidade climática regional.
-              </div>
-            </>
-          }
-        />
-        <h5 className="section-title">
-          <span className="title-icon">📅</span>
-          Padrões Sazonais Identificados
-        </h5>
         <div className="seasonality-grid">
           <div className="season-item">
             <span className="season-icon">🌧️</span>

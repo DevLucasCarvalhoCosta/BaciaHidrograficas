@@ -8,17 +8,17 @@ export const MetricComparison: React.FC<MetricComparisonProps> = ({ data }) => {
   const chartData = useMemo(() => {
     if (!data.length) return { bars: [], maxChuva: 0, maxTemp: 0, minChuva: 0, minTemp: 0 }
     
-    const chuvas = data.map(d => parseFloat(d.chuva_maxima) || 0)
-    const temps = data.map(d => parseFloat(d.temp_media) || 0)
+    const chuvas = data.map(d => parseFloat(d.chuva_mensal || '0') || 0).filter(v => v > 0)
+    const temps = data.map(d => parseFloat(d.temp_media || '0') || 0).filter(v => v > 0)
     
-    const maxChuva = Math.max(...chuvas)
-    const minChuva = Math.min(...chuvas)
-    const maxTemp = Math.max(...temps)
-    const minTemp = Math.min(...temps)
+    const maxChuva = chuvas.length > 0 ? Math.max(...chuvas) : 0
+    const minChuva = chuvas.length > 0 ? Math.min(...chuvas) : 0
+    const maxTemp = temps.length > 0 ? Math.max(...temps) : 0
+    const minTemp = temps.length > 0 ? Math.min(...temps) : 0
     
     const bars = data.map((d, i) => {
-      const chuva = parseFloat(d.chuva_maxima) || 0
-      const temp = parseFloat(d.temp_media) || 0
+      const chuva = parseFloat(d.chuva_mensal || '0') || 0
+      const temp = parseFloat(d.temp_media || '0') || 0
       
       let mesNome = 'N/A'
       try {
@@ -52,10 +52,10 @@ export const MetricComparison: React.FC<MetricComparisonProps> = ({ data }) => {
       <div className="comparison-legend">
         <div className="legend-item">
           <span className="legend-color" style={{ background: '#3b82f6' }}></span>
-          <span>Chuva Máxima (mm)</span>
+          <span>Chuva Mensal Total (mm)</span>
         </div>
         <div className="legend-item">
-          <span className="legend-color" style={{ background: '#ef4444' }}></span>
+          <span className="legend-color" style={{ background: '#f59e0b' }}></span>
           <span>Temperatura Média (°C)</span>
         </div>
       </div>
@@ -63,7 +63,7 @@ export const MetricComparison: React.FC<MetricComparisonProps> = ({ data }) => {
       {/* Gráfico de Chuva */}
       <div style={{ marginBottom: '40px' }}>
         <h4 style={{ fontSize: '15px', color: '#3b82f6', marginBottom: '12px', fontWeight: 600 }}>
-          🌧️ Chuva Máxima por Mês
+          🌧️ Chuva Mensal Total por Mês
         </h4>
         <div className="comparison-chart-separate">
           {chartData.bars.map((bar, i) => (
@@ -74,7 +74,7 @@ export const MetricComparison: React.FC<MetricComparisonProps> = ({ data }) => {
                   height: `${bar.chuvaPercent}%`,
                   background: '#3b82f6'
                 }}
-                title={`${bar.chuva.toFixed(2)} mm`}
+                title={`${bar.chuva.toFixed(2)} mm (total do mês)`}
               >
                 <span className="bar-value">{bar.chuva.toFixed(1)}</span>
               </div>

@@ -125,6 +125,18 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
     const primaryPoints = createPoints(primaryValues, sampledData)
     const secondaryPoints = secondaryKey ? createPoints(secondaryValues, sampledData) : []
     
+    // Detectar se há múltiplos anos nos dados
+    const years = new Set<number>()
+    sampledData.forEach(d => {
+      try {
+        const date = new Date(d[xKey])
+        if (!isNaN(date.getTime())) {
+          years.add(date.getFullYear())
+        }
+      } catch {}
+    })
+    const hasMultipleYears = years.size > 1
+    
     // Gerar labels do eixo X - TODOS os dias com suas posições EXATAS
     const labels = sampledData.map((d, i) => {
       const dateValue = d[xKey]
@@ -135,7 +147,12 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
       try {
         const date = new Date(dateValue)
         if (!isNaN(date.getTime())) {
-          shortText = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+          // Se houver múltiplos anos, incluir ano no label curto
+          if (hasMultipleYears) {
+            shortText = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' })
+          } else {
+            shortText = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+          }
           fullDate = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
           text = fullDate
         }
@@ -151,7 +168,8 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
       return {
         text: shortText,
         fullDate,
-        xPos
+        xPos,
+        year: years.size > 0 ? new Date(dateValue).getFullYear() : null
       }
     })
     
@@ -255,11 +273,10 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
             paddingBottom: '50px' // Espaço para os labels
           }}>
             <svg 
-              viewBox={`0 0 ${chartData.width} ${chartData.chartHeight}`} 
-              preserveAspectRatio="none"
+              width={chartData.width}
+              height={chartData.chartHeight}
+              viewBox={`0 0 ${chartData.width} ${chartData.chartHeight}`}
               style={{ 
-                width: '100%', 
-                height: '100%',
                 display: 'block'
               }}
             >
@@ -290,10 +307,14 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                 />
               ))}
               
-              {/* Linhas verticais para cada dia */}
+              {/* Linhas verticais para cada dia e marcadores de mudança de ano */}
               {chartData.labels.map((label, i) => {
-                // Mostrar linha vertical a cada 7 dias ou em dias específicos
                 const showLine = i === 0 || i === chartData.labels.length - 1 || i % 7 === 0;
+                
+                // Verificar se é o primeiro dia de um novo ano
+                const isYearChange = i > 0 && label.year && chartData.labels[i - 1].year && 
+                                    label.year !== chartData.labels[i - 1].year;
+                
                 if (showLine) {
                   return (
                     <line
@@ -309,6 +330,26 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                     />
                   )
                 }
+                
+                // Linha mais destacada quando muda o ano
+                if (isYearChange) {
+                  return (
+                    <line
+                      key={`year-${i}`}
+                      x1={label.xPos}
+                      y1="0"
+                      x2={label.xPos}
+                      y2={chartData.chartHeight}
+                      stroke="#3b82f6"
+                      strokeWidth="2"
+                      strokeDasharray="4,2"
+                      opacity="0.4"
+                    >
+                      <title>Início de {label.year}</title>
+                    </line>
+                  )
+                }
+                
                 return null
               })}
               
@@ -338,10 +379,11 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                   key={`p-${i}`}
                   cx={point.x}
                   cy={point.y}
-                  r="4"
+                  r="5"
                   fill="white"
                   stroke={color}
-                  strokeWidth="2"
+                  strokeWidth="2.5"
+                  style={{ cursor: 'pointer' }}
                 >
                   <title>{point.date}: {point.value.toFixed(2)} {unit}</title>
                 </circle>
@@ -363,6 +405,21 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                     strokeLinejoin="round"
                     strokeDasharray="5,3"
                   />
+                  {/* Pontos de dados - Secondary - UM PONTO POR DIA */}
+                  {chartData.secondaryPoints.map((point, i) => (
+                    <circle
+                      key={`s-${i}`}
+                      cx={point.x}
+                      cy={point.y}
+                      r="4.5"
+                      fill="white"
+                      stroke={secondaryColor}
+                      strokeWidth="2.5"
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <title>{point.date}: {point.value.toFixed(2)} {unit}</title>
+                    </circle>
+                  ))}
                 </>
               )}
             </svg>
@@ -381,6 +438,10 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                 const totalDays = chartData.labels.length;
                 let showLabel = false;
                 
+                // Sempre mostrar quando muda de ano
+                const isYearChange = i > 0 && label.year && chartData.labels[i - 1].year && 
+                                    label.year !== chartData.labels[i - 1].year;
+                
                 if (totalDays <= 50) {
                   showLabel = true;
                 } else if (totalDays <= 200) {
@@ -391,7 +452,8 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                   showLabel = i % 14 === 0;
                 }
                 
-                if (i === 0 || i === totalDays - 1) showLabel = true;
+                // Sempre mostrar primeiro, último e mudanças de ano
+                if (i === 0 || i === totalDays - 1 || isYearChange) showLabel = true;
                 
                 if (showLabel) {
                   return (
@@ -404,10 +466,10 @@ export const TimeSeriesChart: React.FC<TimeSeriesChartProps> = ({
                         transform: 'translateX(-50%) rotate(-45deg)',
                         transformOrigin: 'top left',
                         fontSize: '11px',
-                        color: '#6b7280',
+                        color: isYearChange ? '#3b82f6' : '#6b7280',
                         whiteSpace: 'nowrap',
                         userSelect: 'none',
-                        fontWeight: '500'
+                        fontWeight: isYearChange ? '700' : '500'
                       }}
                       title={label.fullDate}
                     >

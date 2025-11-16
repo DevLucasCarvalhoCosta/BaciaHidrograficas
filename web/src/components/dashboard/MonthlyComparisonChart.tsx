@@ -2,9 +2,8 @@ import React, { useMemo } from 'react'
 
 interface MonthlyData {
   mes: string
-  chuva_maxima: string
+  chuva_mensal: string
   temp_media: string
-  bateria_media: string
   total_medicoes: string
 }
 
@@ -16,12 +15,12 @@ export const MonthlyComparisonChart: React.FC<MonthlyComparisonChartProps> = ({ 
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return null
 
-    const chuvaValues = data.map(d => parseFloat(d.chuva_maxima))
-    const tempValues = data.map(d => parseFloat(d.temp_media))
+    const chuvaValues = data.map(d => parseFloat(d.chuva_mensal || '0'))
+    const tempValues = data.map(d => parseFloat(d.temp_media || '0'))
 
-    const chuvaMax = Math.max(...chuvaValues)
-    const tempMax = Math.max(...tempValues)
-    const tempMin = Math.min(...tempValues)
+    const chuvaMax = Math.max(...chuvaValues.filter(v => v > 0))
+    const tempMax = Math.max(...tempValues.filter(v => v > 0))
+    const tempMin = Math.min(...tempValues.filter(v => v > 0))
 
     return {
       months: data.map(d => {
@@ -69,10 +68,11 @@ export const MonthlyComparisonChart: React.FC<MonthlyComparisonChartProps> = ({ 
     <div className="monthly-comparison-chart">
       {/* Descrição do gráfico - mesmo estilo dos outros */}
       <p className="chart-description" style={{ marginBottom: '20px' }}>
-        <strong>Visualização dual-axis</strong> que sobrepõe precipitação (barras azuis) e temperatura (linha vermelha) mensais em escala sincronizada. 
+        <strong>Visualização dual-axis</strong> que sobrepõe precipitação mensal total (barras azuis) e temperatura média (linha vermelha) em escala sincronizada. 
+        As <strong>barras de chuva representam o total de MM precipitado no mês</strong> (soma de chuva_adotada de todos os dias).
         As <strong>linhas tracejadas</strong> mostram médias móveis que suavizam flutuações e revelam tendências de médio prazo. 
-        Esta análise comparativa facilita a identificação de <strong>correlações inversas</strong> (mais chuva → menor temperatura) 
-        ou padrões atípicos que merecem investigação. Essencial para estudos de sazonalidade climática e planejamento de recursos hídricos.
+        Esta análise comparativa facilita a identificação de <strong>correlações</strong> entre precipitação acumulada e temperatura média, 
+        essencial para estudos de sazonalidade climática e impacto no nível dos rios.
       </p>
 
       <div className="chart-legend-dual">
@@ -81,7 +81,7 @@ export const MonthlyComparisonChart: React.FC<MonthlyComparisonChartProps> = ({ 
           <div className="legend-group">
             <div className="legend-item">
               <div className="legend-symbol bar" style={{ background: 'linear-gradient(180deg, #3b82f6 0%, rgba(59, 130, 246, 0.6) 100%)' }}></div>
-              <span>Chuva Máxima (mm)</span>
+              <span>Chuva Mensal Total (mm)</span>
             </div>
             <div className="legend-item">
               <div className="legend-symbol line" style={{ borderColor: '#ef4444' }}></div>
@@ -251,22 +251,22 @@ export const MonthlyComparisonChart: React.FC<MonthlyComparisonChartProps> = ({ 
         <div className="summary-item">
           <span className="summary-icon">🌧️</span>
           <div className="summary-content">
-            <span className="summary-label">Chuva Média</span>
-            <span className="summary-value">{(chuva.reduce((a, b) => a + b, 0) / chuva.length).toFixed(2)} mm</span>
+            <span className="summary-label">Chuva Média Mensal</span>
+            <span className="summary-value">{(chuva.reduce((a, b) => a + b, 0) / chuva.filter(v => v > 0).length).toFixed(2)} mm</span>
           </div>
         </div>
         <div className="summary-item">
           <span className="summary-icon">📊</span>
           <div className="summary-content">
             <span className="summary-label">Variação Chuva</span>
-            <span className="summary-value">{(Math.max(...chuva) - Math.min(...chuva)).toFixed(2)} mm</span>
+            <span className="summary-value">{(Math.max(...chuva.filter(v => v > 0)) - Math.min(...chuva.filter(v => v > 0))).toFixed(2)} mm</span>
           </div>
         </div>
         <div className="summary-item">
           <span className="summary-icon">🌡️</span>
           <div className="summary-content">
             <span className="summary-label">Temperatura Média</span>
-            <span className="summary-value">{(temperatura.reduce((a, b) => a + b, 0) / temperatura.length).toFixed(1)}°C</span>
+            <span className="summary-value">{(temperatura.filter(v => v > 0).reduce((a, b) => a + b, 0) / temperatura.filter(v => v > 0).length).toFixed(1)}°C</span>
           </div>
         </div>
         <div className="summary-item">

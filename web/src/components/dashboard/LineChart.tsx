@@ -32,8 +32,10 @@ export const LineChart: React.FC<LineChartProps> = ({
     const niceMax = Math.ceil(max * 1.05)
     const range = niceMax - niceMin || 1
     
-    const width = 100
-    const chartHeight = 100
+    // LARGURA FIXA em pixels para manter proporções corretas
+    const pixelsPerDay = 40
+    const width = Math.max(800, data.length * pixelsPerDay)
+    const chartHeight = 350
     const stepX = width / (data.length - 1 || 1)
     
     const pointsArray = data.map((d, i) => {
@@ -60,8 +62,6 @@ export const LineChart: React.FC<LineChartProps> = ({
     ]
     
     // Labels do eixo X - mostrar TODOS os dias
-    const totalDays = data.length
-    
     const xAxisLabels = data.map((d, i) => {
       const dateValue = d[xKey]
       let text = ''
@@ -81,11 +81,23 @@ export const LineChart: React.FC<LineChartProps> = ({
       
       text = dayNumber > 0 ? String(dayNumber) : ''
       
-      // Mostrar TODOS os dias
-      return { text, index: i, show: true }
+      // Calcular posição X exata do ponto
+      const xPos = i * stepX
+      
+      return { text, index: i, show: true, xPos }
     })
     
-    return { points, areaPoints, min: niceMin, max: niceMax, yAxisLabels, xAxisLabels }
+    return { 
+      points, 
+      areaPoints, 
+      min: niceMin, 
+      max: niceMax, 
+      yAxisLabels, 
+      xAxisLabels,
+      width,
+      chartHeight,
+      pointsArray
+    }
   }, [data, xKey, yKey])
 
   if (!data.length) {
@@ -95,6 +107,33 @@ export const LineChart: React.FC<LineChartProps> = ({
   if (points === '') {
     return <div className="chart-empty">Sem dados válidos para exibir</div>
   }
+  
+  const { width, chartHeight, pointsArray } = useMemo(() => {
+    if (!data.length) return { width: 800, chartHeight: 350, pointsArray: [] }
+    
+    const pixelsPerDay = 40
+    const width = Math.max(800, data.length * pixelsPerDay)
+    const chartHeight = 350
+    const stepX = width / (data.length - 1 || 1)
+    
+    const values = data.map(d => parseFloat(d[yKey]) || 0).filter(v => v > 0)
+    const minVal = Math.min(...values)
+    const maxVal = Math.max(...values)
+    const niceMin = Math.floor(minVal * 0.95)
+    const niceMax = Math.ceil(maxVal * 1.05)
+    const range = niceMax - niceMin || 1
+    
+    const pointsArray = data.map((d, i) => {
+      const value = parseFloat(d[yKey]) || 0
+      const x = i * stepX
+      const y = value > 0 
+        ? chartHeight - ((value - niceMin) / range) * chartHeight
+        : chartHeight
+      return { x, y, value }
+    })
+    
+    return { width, chartHeight, pointsArray }
+  }, [data, yKey])
 
   return (
     <div className="line-chart-container">
@@ -109,41 +148,42 @@ export const LineChart: React.FC<LineChartProps> = ({
       </div>
       
       {/* Área do gráfico */}
-      <div className="line-chart-wrapper">
+      <div className="line-chart-wrapper" style={{ 
+        overflowX: 'auto',
+        position: 'relative'
+      }}>
         <svg 
-          viewBox="0 0 100 100" 
-          preserveAspectRatio="none"
-          style={{ width: '100%', height: `${height}px`, display: 'block' }}
+          width={width}
+          height={chartHeight}
+          viewBox={`0 0 ${width} ${chartHeight}`}
+          style={{ display: 'block' }}
         >
           {/* Grid lines horizontais */}
-          {[0, 25, 50, 75, 100].map(y => (
+          {[0, 87.5, 175, 262.5, 350].map((y, i) => (
             <line 
               key={y}
               x1="0" 
               y1={y} 
-              x2="100" 
+              x2={width} 
               y2={y} 
               stroke="#e5e7eb" 
-              strokeWidth="0.2"
+              strokeWidth="1"
             />
           ))}
           
           {/* Grid lines verticais para cada dia */}
-          {data.map((_, i) => {
-            const x = (i / (data.length - 1)) * 100
-            return (
-              <line 
-                key={`grid-${i}`}
-                x1={x} 
-                y1="0" 
-                x2={x} 
-                y2="100" 
-                stroke="#f3f4f6" 
-                strokeWidth="0.1"
-                opacity="0.5"
-              />
-            )
-          })}
+          {xAxisLabels.map((label, i) => (
+            <line 
+              key={`grid-${i}`}
+              x1={label.xPos} 
+              y1="0" 
+              x2={label.xPos} 
+              y2={chartHeight} 
+              stroke="#f3f4f6" 
+              strokeWidth="1"
+              opacity="0.5"
+            />
+          ))}
           
           {/* Gradiente da área */}
           <defs>
@@ -164,49 +204,52 @@ export const LineChart: React.FC<LineChartProps> = ({
           <polyline
             fill="none"
             stroke={color}
-            strokeWidth="1.5"
+            strokeWidth="3"
             strokeLinecap="round"
             strokeLinejoin="round"
             points={points}
           />
           
-          {/* Pontos de dados visíveis */}
-          {data.map((d, i) => {
-            const value = parseFloat(d[yKey]) || 0
-            if (value <= 0) return null
-            
-            const x = (i / (data.length - 1)) * 100
-            const y = 100 - ((value - min) / (max - min)) * 100
+          {/* Pontos de dados visíveis - AGORA COM TAMANHO CORRETO */}
+          {pointsArray.map((point, i) => {
+            if (point.value <= 0) return null
             
             return (
               <circle
                 key={`point-${i}`}
-                cx={x}
-                cy={y}
-                r="0.8"
-                fill={color}
-                opacity="0.7"
+                cx={point.x}
+                cy={point.y}
+                r="5"
+                fill="white"
+                stroke={color}
+                strokeWidth="2.5"
+                style={{ cursor: 'pointer' }}
               >
-                <title>{value.toFixed(2)} {unit}</title>
+                <title>{point.value.toFixed(2)} {unit}</title>
               </circle>
             )
           })}
         </svg>
         
         {/* Eixo X */}
-        <div className="x-axis">
+        <div className="x-axis" style={{ 
+          position: 'relative',
+          width: `${width}px`,
+          height: '30px',
+          marginTop: '5px'
+        }}>
           {xAxisLabels.filter(l => l.show).map((label, i) => {
-            // Para gráfico de linha, usar posição exata do ponto
-            const pointPosition = data.length > 1 
-              ? (label.index / (data.length - 1)) * 100 
-              : 50
-            
             return (
               <span 
                 key={i}
                 className="x-axis-label"
                 style={{ 
-                  left: `${pointPosition}%`,
+                  position: 'absolute',
+                  left: `${label.xPos}px`,
+                  transform: 'translateX(-50%)',
+                  fontSize: '12px',
+                  color: '#374151',
+                  fontWeight: '600'
                 }}
               >
                 {label.text}
