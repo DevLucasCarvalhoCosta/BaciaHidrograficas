@@ -179,6 +179,7 @@ jobs:
           username: ${{ secrets.UEG_SSH_USER }}
           key: ${{ secrets.UEG_SSH_KEY }}
           script_stop: true
+          envs: ANA_DB_USER,ANA_DB_PASSWORD,ANA_BASE_URL,ANA_IDENTIFICADOR,ANA_SENHA
           script: |
             set -e
             
@@ -188,20 +189,26 @@ jobs:
             
             # Verificar se o .env existe (não sobrescrever credenciais)
             if [ ! -f .env ]; then
-              echo "⚠️ Arquivo .env não encontrado! Criando template..."
+              echo "⚠️ Arquivo .env não encontrado! Criando a partir de secrets..."
               cat > .env << EOF
-            # Configurações do Banco de Dados
-            ANA_DB_USER=ana_user
-            ANA_DB_PASSWORD=change_me
+            # Configurações do Banco de Dados (via GitHub Secrets)
+            ANA_DB_USER=${ANA_DB_USER:-ana_user}
+            ANA_DB_PASSWORD=${ANA_DB_PASSWORD}
             
-            # Credenciais API ANA
-            ANA_BASE_URL=https://www.ana.gov.br/hidrowebservice
-            ANA_IDENTIFICADOR=change_me
-            ANA_SENHA=change_me
+            # Credenciais API ANA (via GitHub Secrets)
+            ANA_BASE_URL=${ANA_BASE_URL:-https://www.ana.gov.br/hidrowebservice}
+            ANA_IDENTIFICADOR=${ANA_IDENTIFICADOR}
+            ANA_SENHA=${ANA_SENHA}
             EOF
             fi
             
             echo "✅ Backend configurado!"
+        env:
+          ANA_DB_USER: ${{ secrets.ANA_DB_USER }}
+          ANA_DB_PASSWORD: ${{ secrets.ANA_DB_PASSWORD }}
+          ANA_BASE_URL: ${{ secrets.ANA_BASE_URL }}
+          ANA_IDENTIFICADOR: ${{ secrets.ANA_IDENTIFICADOR }}
+          ANA_SENHA: ${{ secrets.ANA_SENHA }}
 
       # ==========================================
       # DEPLOY FRONTEND

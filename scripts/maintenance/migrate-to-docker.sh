@@ -123,11 +123,13 @@ if [ ! -f "$PROJECT_DIR/.env" ]; then
     echo ""
     echo "Crie o arquivo .env com:"
     cat << 'EOF'
-# Senhas dos bancos (use as mesmas do PostgreSQL atual)
-PATRIMONIO_DB_PASSWORD=SENHA_AQUI
-ESTRESSE_DB_PASSWORD=SENHA_AQUI
-ANA_DB_PASSWORD=SENHA_AQUI
-N8N_ENCRYPTION_KEY=$(openssl rand -base64 32)
+# Senhas dos bancos (gere senhas fortes com: openssl rand -base64 24)
+PATRIMONIO_DB_PASSWORD=<GERE_SENHA_FORTE>
+ESTRESSE_DB_PASSWORD=<GERE_SENHA_FORTE>
+ANA_DB_PASSWORD=<GERE_SENHA_FORTE>
+N8N_ENCRYPTION_KEY=<EXECUTE: openssl rand -base64 32>
+
+# IMPORTANTE: Nunca commite este arquivo!
 EOF
     read -p "Pressione ENTER após criar o .env..."
 fi
