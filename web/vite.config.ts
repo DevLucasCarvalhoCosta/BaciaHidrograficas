@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Base path para deploy no servidor UEG (sub-path /ana)
-  base: process.env.NODE_ENV === 'production' ? '/ana/' : '/',
+  // Base path - agora com domínio próprio (anahidro.duckdns.org), usamos raiz
+  base: '/',
   server: {
     port: 5173,
     open: true,

@@ -178,11 +178,11 @@ if [ $? -eq 0 ]; then
     echo ""
     
     echo "1️⃣ Teste: GET /api/ana/estacoes"
-    curl -s -o /dev/null -w "Status: %{http_code}\n" https://patrimonioueg.duckdns.org/api/ana/estacoes/hidro?unidadefederativa=GO
+    curl -s -o /dev/null -w "Status: %{http_code}\n" https://anahidro.duckdns.org/api/ana/estacoes/hidro?unidadefederativa=GO
     
     echo ""
     echo "2️⃣ Teste: GET /api/dashboard/stats/75650010"
-    curl -s -o /dev/null -w "Status: %{http_code}\n" https://patrimonioueg.duckdns.org/api/dashboard/stats/75650010
+    curl -s -o /dev/null -w "Status: %{http_code}\n" https://anahidro.duckdns.org/api/dashboard/stats/75650010
     
     echo ""
     echo "=========================================="

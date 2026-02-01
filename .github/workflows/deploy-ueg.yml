@@ -93,7 +93,7 @@ jobs:
       - name: 🏗️ Build Frontend
         working-directory: ./web
         env:
-          VITE_API_URL: https://patrimonioueg.duckdns.org/api/ana
+          VITE_API_URL: https://anahidro.duckdns.org/api
         run: npm run build
 
       - name: 📤 Upload Frontend Artifacts
@@ -323,7 +323,7 @@ jobs:
       - name: 🏥 Check Backend Health
         run: |
           echo "🔍 Verificando saúde do backend..."
-          response=$(curl -f -s https://patrimonioueg.duckdns.org/api/ana/health)
+          response=$(curl -f -s https://anahidro.duckdns.org/api/health)
           echo "Resposta: $response"
           
           if echo "$response" | grep -q "ok"; then
@@ -336,7 +336,7 @@ jobs:
       - name: 🌐 Check Frontend Availability
         run: |
           echo "🔍 Verificando disponibilidade do frontend..."
-          status_code=$(curl -o /dev/null -s -w "%{http_code}" https://patrimonioueg.duckdns.org/ana)
+          status_code=$(curl -o /dev/null -s -w "%{http_code}" https://anahidro.duckdns.org/)
           
           if [ "$status_code" -eq 200 ]; then
             echo "✅ Frontend está acessível! (HTTP $status_code)"
@@ -352,9 +352,9 @@ jobs:
           echo "════════════════════════════════════════════"
           echo ""
           echo "🌐 URLs da aplicação:"
-          echo "   Frontend: https://patrimonioueg.duckdns.org/ana/"
-          echo "   API:      https://patrimonioueg.duckdns.org/api/ana/"
-          echo "   Health:   https://patrimonioueg.duckdns.org/api/ana/health"
+          echo "   Frontend: https://anahidro.duckdns.org/"
+          echo "   API:      https://anahidro.duckdns.org/api/"
+          echo "   Health:   https://anahidro.duckdns.org/api/health"
           echo ""
           echo "📊 Para monitorar:"
           echo "   ssh -p 8740 usuario@200.137.241.42"

@@ -659,9 +659,9 @@ Abra o navegador em: `http://localhost:5173`
 O projeto está configurado para deploy automatizado via GitHub Actions no servidor da UEG.
 
 #### URLs de Produção
-- **Frontend**: https://patrimonioueg.duckdns.org/ana
-- **Backend API**: https://patrimonioueg.duckdns.org/api/ana
-- **Health Check**: https://patrimonioueg.duckdns.org/api/ana/health
+- **Frontend**: https://anahidro.duckdns.org/
+- **Backend API**: https://anahidro.duckdns.org/api
+- **Health Check**: https://anahidro.duckdns.org/api/health
 
 #### Configuração
 
