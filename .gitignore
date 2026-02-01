@@ -1,52 +1,114 @@
-# Dependencies
+# ============================================
+# DEPENDENCIES
+# ============================================
 node_modules/
 .pnp
 .pnp.js
+.yarn/
 
-# Testing
-coverage/
-
-# Production builds
+# ============================================
+# BUILD & PRODUCTION
+# ============================================
 dist/
 build/
+*.tsbuildinfo
 
-# Environment variables
+# ============================================
+# ENVIRONMENT VARIABLES (CRITICAL - SECURITY)
+# ============================================
 .env
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+.env*.local
 
-# Logs
+# ============================================
+# LOGS
+# ============================================
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
-*.log
+pnpm-debug.log*
 
-# OS files
+# ============================================
+# OPERATING SYSTEM
+# ============================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
-# IDE
+# ============================================
+# IDE & EDITORS
+# ============================================
 .vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
 .idea/
 *.swp
 *.swo
 *~
+*.sublime-workspace
+*.sublime-project
 
-# Prisma
+# ============================================
+# DATABASE & ORM
+# ============================================
 prisma/.env
-
-# Temporary files
-*.tmp
-*.temp
-.cache/
-
-# Database
 *.db
 *.sqlite
 *.sqlite3
+prisma/dev.db*
+prisma/*.sqlite
+prisma/migrations/*.sql.backup
 
-# Docker
+# ============================================
+# CACHE & TEMPORARY FILES
+# ============================================
+*.tmp
+*.temp
+.cache/
+.parcel-cache/
+.turbo/
+.next/
+.nuxt/
+
+# ============================================
+# TESTING
+# ============================================
+coverage/
+.nyc_output/
+*.lcov
+
+# ============================================
+# MISC
+# ============================================
+*.pem
+*.p12
+*.key
+*.crt
+!*.example.pem
+
+# ============================================
+# ACADEMIC DOCUMENTS (TCC)
+# ============================================
+TCC*.md
+TCC*.pdf
+TCC*.docx
+*.tcc
+
+# ============================================
+# DOCKER
+# ============================================
 .dockerignore

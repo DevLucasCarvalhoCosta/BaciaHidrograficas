@@ -1,95 +1,89 @@
-# ANA Integration Server (Backend)
+# 🖥️ Backend - ANA Integration Server
 
-Backend Node.js + TypeScript para integrar com a API da ANA (Agência Nacional de Águas). Este serviço expõe um endpoint de login que chama o endpoint oficial da ANA (GET /EstacoesTelemetricas/OAUth/v1) e retorna o token.
+API REST para integração com a API da ANA (Agência Nacional de Águas).
 
-## Requisitos
-- Node.js 18+ (recomendado) e npm
-- Acesso à API da ANA (URL base e credenciais)
+## Tecnologias
 
-## Configuração
-1. Instale as dependências:
-   ```powershell
-   cd "c:\Users\KUMA\Documents\ProjetoTcc\server"
-   npm install
-   ```
-2. Crie o arquivo `.env` baseado em `.env.example`:
-   ```ini
-   PORT=3000
-  # ANA_BASE_URL deve ser apenas a base (sem o caminho de auth)
-  # Exemplo correto: https://api.ana.gov.br/hidrowebservice
-  # NÃO incluir: /EstacoesTelemetricas/OAUth/v1
-  ANA_BASE_URL=https://<sua-base-da-ana>
-   # opcional: pode enviar no body também
-   ANA_IDENTIFICADOR=<seu-identificador>
-   ANA_SENHA=<sua-senha>
-   
-  # Postgres
-  # Exemplo: postgresql://postgres:postgres@localhost:5432/ana_db?schema=public
-  DATABASE_URL=postgresql://postgres:postgres@localhost:5432/ana_db?schema=public
-   ```
+- **Node.js 18** + Express 4
+- **TypeScript 5**
+- **Prisma 6** (ORM)
+- **PostgreSQL 15**
+- **Zod** (Validação)
 
-## Rodando em desenvolvimento
-```powershell
-cd "c:\Users\KUMA\Documents\ProjetoTcc\server"
-npx ts-node-dev --respawn --transpile-only src/index.ts
-```
+## Instalação
 
-Você deve ver no terminal: `Server listening on http://localhost:3000`.
-
-## Testando
-- Healthcheck:
-  ```powershell
-  Invoke-RestMethod -Uri http://localhost:3000/health | ConvertTo-Json -Depth 5
-  ```
-- Login (enviando credenciais no body):
-  ```powershell
-  $body = @{ identificador = "<seu-identificador>"; senha = "<sua-senha>" } | ConvertTo-Json
-  Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/ana/login -ContentType 'application/json' -Body $body | ConvertTo-Json -Depth 5
-  ```
-- Login (usando credenciais do `.env`, body vazio):
-  ```powershell
-  Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/ana/login -ContentType 'application/json' -Body '{}' | ConvertTo-Json -Depth 5
-  ```
-
-Se as credenciais e a URL base estiverem corretas, a resposta conterá um `token` (string) para uso nos próximos endpoints da ANA.
-
-## Banco de Dados (Postgres + Prisma)
-
-1. Suba o Postgres com Docker:
-   ```powershell
-   cd "c:\Users\KUMA\Documents\ProjetoTcc\server"
-   docker compose up -d
-   ```
-2. Gere o client Prisma e crie o schema no banco:
-   ```powershell
-   npm run prisma:generate
-   npm run db:push
-   ```
-
-## Sincronizar inventário HidroSat
-- Endpoint: `POST /api/ana/estacoes/hidrosat/sync`
-- Opções de autenticação:
-  - Enviar `{ token: "<token>" }` no body, ou
-  - Enviar `{ identificador, senha }` no body (ou definir no `.env`).
-
-Exemplos (Git Bash):
 ```bash
-curl.exe -s -X POST "http://localhost:3000/api/ana/estacoes/hidrosat/sync" \
-  -H "Content-Type: application/json" \
-  -d "{\"identificador\":\"<seu-identificador>\",\"senha\":\"<sua-senha>\"}"
+# Instalar dependências
+npm install
 
-# Com token já obtido
-curl.exe -s -X POST "http://localhost:3000/api/ana/estacoes/hidrosat/sync" \
-  -H "Content-Type: application/json" \
-  -d "{\"token\":\"<seu-token>\"}"
+# Configurar variáveis de ambiente
+cp .env.example .env
+
+# Gerar cliente Prisma
+npx prisma generate
+
+# Aplicar schema no banco
+npx prisma db push
 ```
 
-Resposta esperada:
-```json
-{ "total": <itens retornados>, "upserted": <quantidade persistida> }
+## Desenvolvimento
+
+```bash
+# Iniciar em modo desenvolvimento (hot reload)
+npm run dev
 ```
 
-## Notas
-- O endpoint oficial de login da ANA é um GET com headers `Identificador` e `Senha`. Este backend encapsula essa chamada e normaliza o retorno para `{ token: "..." }`.
-- Erros da ANA (HTTP 4xx/5xx) são propagados como erro do nosso endpoint com a mensagem informada.
-- Não faça commit do arquivo `.env` (já ignorado no `.gitignore`).
+O servidor estará disponível em `http://localhost:3001`.
+
+## Build de Produção
+
+```bash
+# Compilar TypeScript
+npm run build
+
+# Iniciar servidor compilado
+npm start
+```
+
+## Scripts Disponíveis
+
+| Script | Descrição |
+|--------|-----------|
+| `npm run dev` | Inicia servidor em modo desenvolvimento |
+| `npm run build` | Compila TypeScript para JavaScript |
+| `npm start` | Inicia servidor em produção |
+| `npm run prisma:generate` | Gera cliente Prisma |
+| `npm run prisma:migrate` | Executa migrations |
+| `npm run db:push` | Sincroniza schema com banco |
+
+## Estrutura
+
+```
+src/
+├── index.ts          # Entry point
+├── db/
+│   └── prisma.ts     # Cliente Prisma
+├── routes/
+│   ├── ana.ts        # Rotas de integração ANA
+│   └── dashboard.ts  # Rotas do dashboard
+├── services/
+│   ├── anaClient.ts  # Cliente HTTP para API ANA
+│   ├── scheduler.ts  # Agendamento de tarefas
+│   └── syncService.ts# Sincronização de dados
+└── scripts/
+    └── sync-ano-2025.ts  # Script de sincronização
+```
+
+## Endpoints Principais
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| GET | `/health` | Health check |
+| GET | `/api/ana/estacoes` | Lista estações |
+| GET | `/api/ana/series/:codigo` | Dados de uma estação |
+| POST | `/api/ana/series/sync` | Sincroniza dados |
+| GET | `/api/dashboard/resumo` | Resumo estatístico |
+
+## Variáveis de Ambiente
+
+Veja `.env.example` para todas as variáveis disponíveis.

@@ -1,0 +1,79 @@
+version: '3.8'
+
+# ============================================
+# Sistema de Monitoramento de Bacias Hidrográficas
+# Docker Compose para Desenvolvimento/Produção
+# ============================================
+
+services:
+  # ==========================================
+  # BANCO DE DADOS
+  # ==========================================
+  database:
+    image: postgres:15-alpine
+    container_name: ana-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ana_hidro
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - ana_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # BACKEND (API)
+  # ==========================================
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: ana-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@database:5432/ana_hidro?schema=public
+      ANA_BASE_URL: ${ANA_BASE_URL}
+      ANA_IDENTIFICADOR: ${ANA_IDENTIFICADOR}
+      ANA_SENHA: ${ANA_SENHA}
+    ports:
+      - "3001:3001"
+    networks:
+      - ana_network
+    depends_on:
+      database:
+        condition: service_healthy
+
+  # ==========================================
+  # FRONTEND (NGINX)
+  # ==========================================
+  frontend:
+    image: nginx:1.27-alpine
+    container_name: ana-frontend
+    restart: unless-stopped
+    volumes:
+      - ./web/dist:/usr/share/nginx/html:ro
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    networks:
+      - ana_network
+    depends_on:
+      - backend
+
+networks:
+  ana_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
